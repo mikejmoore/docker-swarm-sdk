@@ -1,0 +1,71 @@
+PATH
+  remote: .
+  specs:
+    docker-api (1.33.1)
+      excon (>= 0.38.0)
+      json
+
+GEM
+  remote: http://rubygems.org/
+  specs:
+    addressable (2.5.0)
+      public_suffix (~> 2.0, >= 2.0.2)
+    byebug (6.0.2)
+    cane (3.0.0)
+      parallel
+    coderay (1.1.1)
+    crack (0.4.3)
+      safe_yaml (~> 1.0.0)
+    diff-lcs (1.2.5)
+    excon (0.54.0)
+    hashdiff (0.3.1)
+    json (2.0.2)
+    method_source (0.8.2)
+    parallel (1.10.0)
+    pry (0.10.4)
+      coderay (~> 1.1.0)
+      method_source (~> 0.8.1)
+      slop (~> 3.4)
+    public_suffix (2.0.4)
+    rake (12.0.0)
+    rspec (3.5.0)
+      rspec-core (~> 3.5.0)
+      rspec-expectations (~> 3.5.0)
+      rspec-mocks (~> 3.5.0)
+    rspec-core (3.5.4)
+      rspec-support (~> 3.5.0)
+    rspec-expectations (3.5.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.5.0)
+    rspec-its (1.2.0)
+      rspec-core (>= 3.0.0)
+      rspec-expectations (>= 3.0.0)
+    rspec-mocks (3.5.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.5.0)
+    rspec-support (3.5.0)
+    safe_yaml (1.0.4)
+    single_cov (0.5.8)
+    slop (3.6.0)
+    webmock (2.3.1)
+      addressable (>= 2.3.6)
+      crack (>= 0.3.2)
+      hashdiff
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  byebug (~> 6.0)
+  cane
+  docker-api!
+  parallel
+  pry
+  rake
+  rspec (~> 3.0)
+  rspec-its
+  single_cov
+  webmock
+
+BUNDLED WITH
+   1.10.4
