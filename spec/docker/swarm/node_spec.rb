@@ -1,7 +1,6 @@
 require 'spec_helper'
 require_relative '../../../lib/docker-swarm'
-require "retries"
-
+require 'retry_block'
 #DOCKER_VERSION=1.12 SWARM_MASTER_ADDRESS=http://192.168.40.24:2375 SWARM_WORKER_ADDRESS=http://192.168.40.50:2375 RAILS_ENV=test rspec ./spec/docker/swarm/node_spec.rb
 
 describe Docker::Swarm::Node do
@@ -30,35 +29,39 @@ describe Docker::Swarm::Node do
         
         master_swarm_port = 2377
         swarm_init_options = {
-             "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
-            # "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
-            # "ForceNewCluster" => false,
-            # "Spec" => {
-            #   "Orchestration" => {},
-            #   "Raft" => {},
-            #   "Dispatcher" => {},
-            #   "CAConfig" => {}
-            # }
+            "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
+            "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
+            "ForceNewCluster" => false,
+            "Spec" => {
+              "Orchestration" => {},
+              "Raft" => {},
+              "Dispatcher" => {},
+              "CAConfig" => {}
+            }
           }
         
         puts "Manager node intializing swarm"
         swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
+        expect(swarm.connection).to eq master_connection
     
         # puts "Getting info about new swarm environment"
         # swarm = Docker::Swarm::Swarm.swarm({}, master_connection)
         expect(swarm).to_not be nil
       
-        nodes = Docker::Swarm::Node.all({}, master_connection)
+        nodes = swarm.nodes()
         expect(nodes.length).to eq 1
+        expect(swarm.manager_nodes.length).to eq 1
+        
       
         puts "Worker joining swarm"
-        swarm.join(worker_ip, worker_connection)
+        swarm.join_worker(worker_connection)
       
         puts "View all nodes of swarm (count should be 2)"
-        nodes = Docker::Swarm::Node.all({}, master_connection)
+        nodes = swarm.nodes
         expect(nodes.length).to eq 2
+        expect(swarm.manager_nodes.length).to eq 1
       
-        network = Docker::Swarm::Network.create(network_name, opts = {}, master_connection)
+        network = swarm.create_network(network_name)
         service_create_options = {
           "Name" => "nginx",
           "TaskTemplate" => {
@@ -103,18 +106,33 @@ describe Docker::Swarm::Node do
           },
           "EndpointSpec" => {
             "Ports" => [
-              {
-                "Protocol" => "tcp",
-                "PublishedPort" => 80,
-                "TargetPort" => 80
-              }
+              # {
+              #   "Protocol" => "tcp",
+              #   "PublishedPort" => 8181,
+              #   "TargetPort" => 80
+              # }
             ]
           },
           "Labels" => {
             "foo" => "bar"
           }
         }
-        service = Docker::Swarm::Service.create(service_create_options, master_connection)
+        
+        service = swarm.create_service(service_create_options)
+        
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          puts "Waiting for tasks to start up..."
+          tasks = swarm.tasks
+          running_count = 0
+          tasks.each do |task|
+            if (task.status == :running)
+              running_count += 1
+            end
+          end
+          expect(running_count).to eq 5
+          sleep 1
+        end
+        
 
         manager_nodes = swarm.manager_nodes
         expect(manager_nodes.length).to eq 1
@@ -126,43 +144,55 @@ describe Docker::Swarm::Node do
         worker_node = worker_nodes.first
         worker_node.drain
 
-        with_retries(:max_tries => 4) do
-          tasks = Docker::Swarm::Task.all({}, master_connection)
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          puts "Waiting for node to drain and tasks to relocate..."
+          tasks = swarm.tasks
+          running_count = 0
           tasks.each do |task|
             if (task.status == :running)
               expect(task.node_id).to_not eq worker_node.id
+              running_count += 1
             end
           end
+          expect(running_count).to eq 5
           sleep 1
         end
       
-        puts "Scale service to 20 replicas"
-        service.scale(20)
+        puts "Scale service to 10 replicas"
+        service.scale(10)
+        
 
-        with_retries(:max_tries => 6) do
-          tasks = Docker::Swarm::Task.all({}, master_connection)
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          tasks = swarm.tasks
           tasks.select! {|t| t.status != :shutdown}
-          expect(tasks.length).to eq 20
+          expect(tasks.length).to eq 10
         end
       
+      
         puts "Worker leaves the swarm"
-        Docker::Swarm::Swarm.leave(true, worker_connection)
-        with_retries(:max_tries => 6) do
-          tasks = Docker::Swarm::Task.all({}, master_connection)
-          tasks.select! {|t| t.status != :shutdown}
-          expect(tasks.length).to eq 20
+        swarm.leave(worker_node)
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          worker_node.refresh
+          expect(worker_node.status).to eq 'down'
         end
+
+        tasks = swarm.tasks
+        tasks.select! {|t| t.status != :shutdown}
+        expect(tasks.length).to eq 10
+        
+        worker_node.remove()
+        expect(swarm.worker_nodes.length).to eq 0
       
         puts "Remove service"
         service.remove()
 
-        with_retries(:max_tries => 6) do
-          tasks = Docker::Swarm::Task.all({}, master_connection)
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          tasks = swarm.tasks
           expect(tasks.length).to eq 0
         end
       ensure
-        Docker::Swarm::Swarm.leave(true, worker_connection)
-        Docker::Swarm::Swarm.leave(true, master_connection)
+        puts "Removing swarm ..."
+        swarm.remove if (swarm)
       end
       
     end

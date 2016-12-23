@@ -2,15 +2,21 @@
 class Docker::Swarm::Node
   #include Docker::Base
   attr_reader :hash
+  attr_accessor :connection
   AVAILABILITY = {
     active: "active",
     drain:  "drain"
   }
 
-  def initialize(hash, connection)
+  def initialize(swarm, hash)
     @hash = hash
-    @connection = connection
-    hash['Description']['Hostname']
+    @swarm = swarm
+  end
+  
+  def refresh
+    query = {}
+    response = @swarm.connection.get("/nodes/#{id}", query, expects: [200])
+    @hash = JSON.parse(response)
   end
   
   def id 
@@ -47,26 +53,21 @@ class Docker::Swarm::Node
     change_availability(:active)
   end
   
+  def remove
+    Docker::Swarm::Node.remove(id(), @connection)
+  end
+  
   def change_availability(availability)
     raise "Bad availability param: #{availability}" if (!AVAILABILITY[availability])
     @hash['Spec']['Availability'] = AVAILABILITY[availability]
     query = {version: @hash['Version']['Index']}
-    response = @connection.post("/nodes/#{self.id}/update", query, :body => @hash['Spec'].to_json)
+    response = @swarm.connection.post("/nodes/#{self.id}/update", query, :body => @hash['Spec'].to_json)
   end
-
-  # Return all of the Nodes.
-  def self.all(opts = {}, conn = Docker.connection)
-    raise "opts needs to be hash" if (opts.class != Hash)
+  
+  def remove
     query = {}
-    resp = conn.get('/nodes', query, :body => opts.to_json)
-    hashes = JSON.parse(resp)
-    nodes = []
-    hashes.each do |node_hash|
-      nodes << Docker::Swarm::Node.new(node_hash, conn)
-    end
-    return nodes
+    response = @swarm.connection.delete("/nodes/#{self.id}", query, expects: [200, 406])
   end
-
-  # private :path_for
-  # private_class_method :new
+  
+  
 end

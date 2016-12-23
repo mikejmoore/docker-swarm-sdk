@@ -23,7 +23,7 @@ GEM
       method_source (~> 0.8.1)
       slop (~> 3.4)
     rake (12.0.0)
-    retries (0.0.5)
+    retry_block (1.2.0)
     rspec (3.5.0)
       rspec-core (~> 3.5.0)
       rspec-expectations (~> 3.5.0)
@@ -52,7 +52,7 @@ DEPENDENCIES
   parallel
   pry
   rake
-  retries (~> 0.0.5)
+  retry_block
   rspec (~> 3.0)
   rspec-its
   single_cov

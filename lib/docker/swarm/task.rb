@@ -3,8 +3,9 @@ class Docker::Swarm::Task
   #include Docker::Base
   attr_reader :hash
 
-  def initialize(hash)
+  def initialize(swarm, hash)
     @hash = hash
+    @swarm = swarm
   end
   
   def id 
@@ -31,17 +32,5 @@ class Docker::Swarm::Task
     @hash['Status']['State'].to_sym
   end
 
-  # Return all of the Nodes.
-  def self.all(opts = {}, conn = Docker.connection)
-    raise "opts needs to be hash" if (opts.class != Hash)
-    query = {}
-    resp = conn.get('/tasks', query, :body => opts.to_json)
-    hashes = JSON.parse(resp)
-    items = []
-    hashes.each do |hash|
-      items << Docker::Swarm::Task.new(hash)
-    end
-    return items
-  end
 
 end

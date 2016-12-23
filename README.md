@@ -21,10 +21,13 @@ worker_connection = Docker::Swarm::Connection.new('http://10.20.30.2:2375')
 swarm.join(worker_ip, worker_connection)
 
  # Gather all nodes of swarm
-nodes = Docker::Swarm::Node.all({}, master_connection)
+nodes = swarm.nodes
 
  # Create a network which connect services
-network = Docker::Swarm::Network.create(network_name, opts = {}, master_connection)
+network = swarm.create_network(network_name)
+
+ # Find all networks in swarm cluster
+networks = swarm.networks
 
  # Create a service with 5 replicas
 service_create_options = {
@@ -83,7 +86,7 @@ service_create_options = {
     }
   }
 
-service = Docker::Swarm::Service.create(service_create_options, master_connection)
+service = swarm.create_service(service_create_options)
 
  # Retrieve all manager nodes of swarm
 manager_nodes = swarm.manager_nodes
@@ -96,15 +99,15 @@ worker_node = worker_nodes.first
 worker_node.drain
 
  # Gather all tasks (containers for service) being hosted by the swarm cluster
-tasks = Docker::Swarm::Task.all({}, master_connection)
+tasks = swarm.tasks
 
  # Scale up or down the number of replicas on a service
 service.scale(20)
       
  # Worker leaves the swarm - no forcing
-Docker::Swarm::Swarm.leave(false, worker_connection)
+swarm.leave(false, worker_connection)
 
  # Manager leaves the swarm - forced because manager's need to force the issue.
-Docker::Swarm::Swarm.leave(true, master_connection)
+swarm.leave(true, master_connection)
 
 ```
