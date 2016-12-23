@@ -28,60 +28,61 @@ network = Docker::Swarm::Network.create(network_name, opts = {}, master_connecti
 
  # Create a service with 5 replicas
 service_create_options = {
-  "Name" => "nginx",
-  "TaskTemplate" => {
-  "ContainerSpec" => {
-    "Networks" => [network.id],
-    "Image" => "nginx:1.11.7",
-    "Mounts" => [
-    ],
-    "User" => "root"
-  },
-  "Env" => ["TEST_ENV=test"],
-   # "LogDriver" => {
-   #   "Name" => "json-file",
-   #   "Options" => {
-   #     "max-file" => "3",
-   #     "max-size" => "10M"
-   #   }
-   # },
-   "Placement" => {},
-   # "Resources" => {
-   #   "Limits" => {
-   #     "MemoryBytes" => 104857600.0
-   #   },
-   #   "Reservations" => {
-   #   }
-   # },
-  "RestartPolicy" => {
-    "Condition" => "on-failure",
-    "Delay" => 1,
-    "MaxAttempts" => 3
-  }
-  },
-  "Mode" => {
-  "Replicated" => {
-    "Replicas" => 5
-  }
-  },
-  "UpdateConfig" => {
-  "Delay" => 2,
-  "Parallelism" => 2,
-  "FailureAction" => "pause"
-  },
-  "EndpointSpec" => {
-    "Ports" => [
-      {
-        "Protocol" => "tcp",
-        "PublishedPort" => 80,
-        "TargetPort" => 80
+    "Name" => "nginx",
+    "TaskTemplate" => {
+      "ContainerSpec" => {
+        "Networks" => [network.id],
+        "Image" => "nginx:1.11.7",
+        "Mounts" => [
+        ],
+        "User" => "root"
+      },
+      "Env" => ["TEST_ENV=test"],
+      "LogDriver" => {
+        "Name" => "json-file",
+        "Options" => {
+          "max-file" => "3",
+          "max-size" => "10M"
+        }
+      },
+       "Placement" => {},
+       "Resources" => {
+         "Limits" => {
+           "MemoryBytes" => 104857600
+         },
+         "Reservations" => {
+         }
+       },
+      "RestartPolicy" => {
+        "Condition" => "on-failure",
+        "Delay" => 1,
+        "MaxAttempts" => 3
       }
-    ]
-  },
+    },
+    "Mode" => {
+      "Replicated" => {
+        "Replicas" => 5
+      }
+    },
+    "UpdateConfig" => {
+      "Delay" => 2,
+      "Parallelism" => 2,
+      "FailureAction" => "pause"
+    },
+    "EndpointSpec" => {
+      "Ports" => [
+        {
+          "Protocol" => "tcp",
+          "PublishedPort" => 80,
+          "TargetPort" => 80
+        }
+      ]
+    },
     "Labels" => {
-    "function" => "web"
+      "foo" => "bar"
+    }
   }
-}
+
 service = Docker::Swarm::Service.create(service_create_options, master_connection)
 
  # Retrieve all manager nodes of swarm
