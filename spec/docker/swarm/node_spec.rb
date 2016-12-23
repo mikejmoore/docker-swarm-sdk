@@ -7,6 +7,10 @@ require "retries"
 describe Docker::Swarm::Node do
   describe '#all' do
     it "Retrieves all Nodes" do
+      
+      raise "Must define env variable: SWARM_MASTER_ADDRESS" if (!ENV['SWARM_MASTER_ADDRESS'])
+      raise "Must define env variable: SWARM_WORKER_ADDRESS" if (!ENV['SWARM_WORKER_ADDRESS'])
+      
       swarm = nil
       master_address = ENV['SWARM_MASTER_ADDRESS']
       master_ip = master_address.split("//").last.split(":").first
@@ -66,21 +70,21 @@ describe Docker::Swarm::Node do
               "User" => "root"
             },
             "Env" => ["TEST_ENV=test"],
-            # "LogDriver" => {
-            #   "Name" => "json-file",
-            #   "Options" => {
-            #     "max-file" => "3",
-            #     "max-size" => "10M"
-            #   }
-            # },
+            "LogDriver" => {
+              "Name" => "json-file",
+              "Options" => {
+                "max-file" => "3",
+                "max-size" => "10M"
+              }
+            },
              "Placement" => {},
-            # "Resources" => {
-            #   "Limits" => {
-            #     "MemoryBytes" => 104857600.0
-            #   },
-            #   "Reservations" => {
-            #   }
-            # },
+             "Resources" => {
+               "Limits" => {
+                 "MemoryBytes" => 104857600
+               },
+               "Reservations" => {
+               }
+             },
             "RestartPolicy" => {
               "Condition" => "on-failure",
               "Delay" => 1,
@@ -97,7 +101,6 @@ describe Docker::Swarm::Node do
             "Parallelism" => 2,
             "FailureAction" => "pause"
           },
-#          "Networks" => [network.id],
           "EndpointSpec" => {
             "Ports" => [
               {

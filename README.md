@@ -2,10 +2,9 @@
 
 Sample Usage
 ------------
-
+```ruby
 master_connection = Docker::Swarm::Connection.new('http://10.20.30.1')
 
-```ruby
  # Manager node intializes swarm
 swarm_init_options = {
 "ListenAddr" => "0.0.0.0:2377",
