@@ -25,6 +25,9 @@ module Docker
     require 'docker/swarm/node'
     require 'docker/swarm/service'
     require 'docker/swarm/swarm'
+    require 'docker/swarm/connection'
+    require 'docker/swarm/network'
+    require 'docker/swarm/task'
 
     def default_socket_url
       'unix:///var/run/docker.sock'

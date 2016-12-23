@@ -1,76 +1,65 @@
 require 'spec_helper'
-require_relative '../../../lib/docker/swarm/node'
-require_relative '../../../lib/docker/swarm/swarm'
-require_relative '../../../lib/docker/swarm/service'
+require_relative '../../../lib/docker-swarm'
+require "retries"
 
-describe Docker::Node do
+#DOCKER_VERSION=1.12 SWARM_MASTER_ADDRESS=http://192.168.40.24:2375 SWARM_WORKER_ADDRESS=http://192.168.40.50:2375 RAILS_ENV=test rspec ./spec/docker/swarm/node_spec.rb
+
+describe Docker::Swarm::Node do
   describe '#all' do
     it "Retrieves all Nodes" do
-
-      master_ip = "192.168.40.24"
-      worker_ip = "192.168.40.50"
-      Docker.url = "http://#{master_ip}:2375"
+      swarm = nil
+      master_address = ENV['SWARM_MASTER_ADDRESS']
+      master_ip = master_address.split("//").last.split(":").first
+      worker_address = ENV['SWARM_WORKER_ADDRESS']
+      worker_ip = worker_address.split("//").last.split(":").first
       network_name = "app.1"
 
-      master_connection = Docker::Connection.new("http://" + master_ip + ":2375", Docker.options)
-      worker_connection = Docker::Connection.new("http://" + worker_ip + ":2375", Docker.options)
+      master_connection = Docker::Swarm::Connection.new(master_address)
+      worker_connection = Docker::Swarm::Connection.new(worker_address)
+      
+      Docker::Swarm::Swarm.leave(true, worker_connection)
+      Docker::Swarm::Swarm.leave(true, master_connection)
 
       begin
-        begin
-          puts "Cleanup: Worker node leaving swarm"
-          Docker::Swarm.leave(false, worker_connection)
-        rescue
-        end
-        begin
-          puts "Cleanup: Manager node leaving swarm"
-          Docker::Swarm.leave(true, master_connection)
-        rescue
-        end
+        network = Docker::Swarm::Network::find_by_name(network_name, master_connection)
+        network.remove() if (network)
         
-        puts "Deleting network: #{network_name}"
-        networks = Docker::Network.all({}, master_connection)
-        networks.each do |network|
-          puts "Existing network: #{network}"
-          if (network.info['Name'] == network_name)
-            puts "Deleting network: #{network.info['Name']}"
-            network.remove()
-          end
-        end
-        
+        master_swarm_port = 2377
         swarm_init_options = {
-            "ListenAddr" => "0.0.0.0:2377",
-            "AdvertiseAddr" => "#{master_ip}:2377",
-            "ForceNewCluster" => false,
-            "Spec" => {
-              "Orchestration" => {},
-              "Raft" => {},
-              "Dispatcher" => {},
-              "CAConfig" => {}
-            }
+             "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
+            # "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
+            # "ForceNewCluster" => false,
+            # "Spec" => {
+            #   "Orchestration" => {},
+            #   "Raft" => {},
+            #   "Dispatcher" => {},
+            #   "CAConfig" => {}
+            # }
           }
-          
+        
         puts "Manager node intializing swarm"
-        node_id = Docker::Swarm.init(swarm_init_options, master_connection)
-        
-        puts "Getting info about new swarm environment"
-        swarm = Docker::Swarm.swarm({}, master_connection)
-        join_options = {
-                "ListenAddr" => "0.0.0.0:2377",
-                "AdvertiseAddr" => "#{worker_ip}:2377",
-                "RemoteAddrs" => ["#{master_ip}:2377"],
-                "JoinToken" => swarm.worker_join_token
-              }
+        swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
+    
+        # puts "Getting info about new swarm environment"
+        # swarm = Docker::Swarm::Swarm.swarm({}, master_connection)
+        expect(swarm).to_not be nil
+      
+        nodes = Docker::Swarm::Node.all({}, master_connection)
+        expect(nodes.length).to eq 1
+      
         puts "Worker joining swarm"
-        Docker::Swarm.join(join_options, worker_connection)
-        
-        puts "View all nodes of swarm (2)"
-        nodes = Docker::Node.all(master_connection)
+        swarm.join(worker_ip, worker_connection)
+      
+        puts "View all nodes of swarm (count should be 2)"
+        nodes = Docker::Swarm::Node.all({}, master_connection)
         expect(nodes.length).to eq 2
-        network = Docker::Network.create(network_name, opts = {}, master_connection)
+      
+        network = Docker::Swarm::Network.create(network_name, opts = {}, master_connection)
         service_create_options = {
           "Name" => "nginx",
           "TaskTemplate" => {
             "ContainerSpec" => {
+              "Networks" => [network.id],
               "Image" => "nginx:1.11.7",
               "Mounts" => [
               ],
@@ -103,12 +92,12 @@ describe Docker::Node do
               "Replicas" => 5
             }
           },
-          # "UpdateConfig" => {
-          #   "Delay" => 2,
-          #   "Parallelism" => 2,
-          #   "FailureAction" => "pause"
-          # },
-      #    "Networks" => [network.id],
+          "UpdateConfig" => {
+            "Delay" => 2,
+            "Parallelism" => 2,
+            "FailureAction" => "pause"
+          },
+#          "Networks" => [network.id],
           "EndpointSpec" => {
             "Ports" => [
               {
@@ -122,36 +111,57 @@ describe Docker::Node do
             "foo" => "bar"
           }
         }
-        
-        service = Docker::Service.create(service_create_options, master_connection)
+        service = Docker::Swarm::Service.create(service_create_options, master_connection)
+
+        manager_nodes = swarm.manager_nodes
+        expect(manager_nodes.length).to eq 1
+      
+        worker_nodes = swarm.worker_nodes
+        expect(worker_nodes.length).to eq 1
+
+        # Drain worker
+        worker_node = worker_nodes.first
+        worker_node.drain
+
+        with_retries(:max_tries => 4) do
+          tasks = Docker::Swarm::Task.all({}, master_connection)
+          tasks.each do |task|
+            if (task.status == :running)
+              expect(task.node_id).to_not eq worker_node.id
+            end
+          end
+          sleep 1
+        end
+      
+        puts "Scale service to 20 replicas"
         service.scale(20)
+
+        with_retries(:max_tries => 6) do
+          tasks = Docker::Swarm::Task.all({}, master_connection)
+          tasks.select! {|t| t.status != :shutdown}
+          expect(tasks.length).to eq 20
+        end
+      
+        puts "Worker leaves the swarm"
+        Docker::Swarm::Swarm.leave(true, worker_connection)
+        with_retries(:max_tries => 6) do
+          tasks = Docker::Swarm::Task.all({}, master_connection)
+          tasks.select! {|t| t.status != :shutdown}
+          expect(tasks.length).to eq 20
+        end
+      
+        puts "Remove service"
         service.remove()
-        force = false
-        Docker::Swarm.leave(force, worker_connection)
-      rescue Exception => ex
-        puts ex.message
-        puts ex.backtrace.join("\n")
+
+        with_retries(:max_tries => 6) do
+          tasks = Docker::Swarm::Task.all({}, master_connection)
+          expect(tasks.length).to eq 0
+        end
       ensure
-        force = true
-        Docker::Swarm.leave(force, master_connection)
+        Docker::Swarm::Swarm.leave(true, worker_connection)
+        Docker::Swarm::Swarm.leave(true, master_connection)
       end
       
-      #connection = Excon.new('http://127.0.0.1:2375/swarm/init')
-      # connection = Excon.new('tcp://192.168.40.24:2375/swarm/init')
-      # response = connection.post()
-      # debugger
-
-
-      # connection = Excon.new('tcp://127.0.0.1:2375/services')
-      # response = connection.get()
-      # debugger
-      #
-      # Docker.url = "http://127.0.0.1:2375"
-      # connection = Docker::Connection.new(Docker.url, Docker.options)
-      # Docker::Swarm.init({}, connection)
-      # options = {}
-      # Docker::Node.all(options, connection)
-      # debugger
     end
   end
 end

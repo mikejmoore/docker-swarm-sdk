@@ -1,10 +1,15 @@
 # This class represents a Docker Swarm Node.
 class Docker::Swarm::Node
-  include Docker::Base
+  #include Docker::Base
   attr_reader :hash
+  AVAILABILITY = {
+    active: "active",
+    drain:  "drain"
+  }
 
-  def initialize(hash)
+  def initialize(hash, connection)
     @hash = hash
+    @connection = connection
     hash['Description']['Hostname']
   end
   
@@ -35,17 +40,29 @@ class Docker::Swarm::Node
   end
   
   def drain
-    raise "Not Implemented"
+    change_availability(:drain)
   end
 
-  # Return all of the Containers.
+  def activate
+    change_availability(:active)
+  end
+  
+  def change_availability(availability)
+    raise "Bad availability param: #{availability}" if (!AVAILABILITY[availability])
+    @hash['Spec']['Availability'] = AVAILABILITY[availability]
+    query = {version: @hash['Version']['Index']}
+    response = @connection.post("/nodes/#{self.id}/update", query, :body => @hash['Spec'].to_json)
+  end
+
+  # Return all of the Nodes.
   def self.all(opts = {}, conn = Docker.connection)
+    raise "opts needs to be hash" if (opts.class != Hash)
     query = {}
     resp = conn.get('/nodes', query, :body => opts.to_json)
     hashes = JSON.parse(resp)
     nodes = []
     hashes.each do |node_hash|
-      nodes << Docker::Node.new(node_hash)
+      nodes << Docker::Swarm::Node.new(node_hash, conn)
     end
     return nodes
   end

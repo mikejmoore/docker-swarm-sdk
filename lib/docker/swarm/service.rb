@@ -1,5 +1,7 @@
+require 'docker-api'
+
 class Docker::Swarm::Service
-  include Docker::Base
+  #include Docker::Base
   attr_reader :hash
 
   def initialize(hash, connection)
@@ -41,7 +43,7 @@ class Docker::Swarm::Service
     opts = {}
     response = conn.get("/services/#{id}", query, :body => opts.to_json)
     hash = JSON.parse(response)
-    return Docker::Service.new(hash, conn)
+    return Docker::Swarm::Service.new(hash, conn)
   end
   
   
