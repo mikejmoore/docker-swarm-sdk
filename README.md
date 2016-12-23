@@ -5,6 +5,7 @@ Sample Usage
 
 master_connection = Docker::Swarm::Connection.new('http://10.20.30.1')
 
+```ruby
  # Manager node intializes swarm
 swarm_init_options = {
 "ListenAddr" => "0.0.0.0:2377",
@@ -106,3 +107,4 @@ Docker::Swarm::Swarm.leave(false, worker_connection)
 
  # Manager leaves the swarm - forced because manager's need to force the issue.
 Docker::Swarm::Swarm.leave(true, master_connection)
+```
