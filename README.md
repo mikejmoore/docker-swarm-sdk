@@ -3,7 +3,7 @@
 Sample Usage
 ------------
 ```ruby
-master_connection = Docker::Swarm::Connection.new('http://10.20.30.1')
+master_connection = Docker::Swarm::Connection.new('http://10.20.30.1:2375')
 
  # Manager node intializes swarm
 swarm_init_options = {
@@ -17,7 +17,7 @@ nodes = Docker::Swarm::Node.all({}, master_connection)
 expect(nodes.length).to eq 1
 
  # Worker joins swarm
-worker_connection = Docker::Swarm::Connection.new('http://10.20.30.2')
+worker_connection = Docker::Swarm::Connection.new('http://10.20.30.2:2375')
 swarm.join(worker_ip, worker_connection)
 
  # Gather all nodes of swarm
@@ -100,11 +100,11 @@ tasks = Docker::Swarm::Task.all({}, master_connection)
 
  # Scale up or down the number of replicas on a service
 service.scale(20)
-
       
  # Worker leaves the swarm - no forcing
 Docker::Swarm::Swarm.leave(false, worker_connection)
 
  # Manager leaves the swarm - forced because manager's need to force the issue.
 Docker::Swarm::Swarm.leave(true, master_connection)
+
 ```

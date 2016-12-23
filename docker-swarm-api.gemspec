@@ -1,10 +1,15 @@
 # -*- encoding: utf-8 -*-
+
+# To build:
+# gem build docker-swarm-api.gemspec
+
 require File.expand_path('../lib/docker/swarm/version', __FILE__)
 
 Gem::Specification.new do |gem|
   gem.authors       = ['Mike Moore / Rogue Wave Software']
   gem.email         = 'mike.moore@roguewave.com'
-  gem.description   = gem.summary = 'Ruby API for Docker Swarm'
+  gem.description   = 'API for creating container clusters using Docker Swarm.  Includes service, node, task management'
+  gem.summary       = 'Ruby API for Docker Swarm'
   gem.homepage      = 'https://github.com/maxerly/docker-swarm-api'
   gem.license       = 'MIT'
   gem.files         = `git ls-files lib README.md LICENSE`.split($\)
