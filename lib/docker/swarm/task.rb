@@ -24,6 +24,10 @@ class Docker::Swarm::Task
     @hash['NodeID']
   end
   
+  def node
+    return @swarm.nodes.find {|n| n.id == self.node_id}
+  end
+  
   def created_at
     return DateTime.parse(@hash.first['CreatedAt'])
   end

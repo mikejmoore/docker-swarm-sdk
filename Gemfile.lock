@@ -1,9 +1,10 @@
 PATH
   remote: .
   specs:
-    docker-swarm-api (1.0)
+    docker-swarm-api (1.1)
       docker-api (>= 1.33.1)
       json
+      retry_block
 
 GEM
   remote: http://rubygems.org/
@@ -52,7 +53,6 @@ DEPENDENCIES
   parallel
   pry
   rake
-  retry_block
   rspec (~> 3.0)
   rspec-its
   single_cov

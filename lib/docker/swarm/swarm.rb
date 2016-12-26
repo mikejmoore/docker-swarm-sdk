@@ -7,12 +7,16 @@ class Docker::Swarm::Swarm
 
   def initialize(hash, manager_connection)
     @hash = hash
+#    @manager_connection = manager_connection
     @id = hash['ID']
     @worker_join_token = hash['JoinTokens']['Worker']
     @manager_join_token = hash['JoinTokens']['Manager']
-    manager_node = nodes(manager_connection).first
     @node_hash = {}
-    @node_hash[manager_node.id] = {hash: manager_node.hash, connection: manager_connection}
+    nodes(manager_connection).each do |node|
+      #  Resolv::DNS.new.getaddress("devlog")
+      @node_hash[node.id] = {hash: node.hash, connection: manager_connection}
+      
+    end
   end
 
   def join(node_connection, join_token)
@@ -26,12 +30,15 @@ class Docker::Swarm::Swarm
             "RemoteAddrs" => ["#{master_ip}:2377"],
             "JoinToken" => join_token
           }
+    new_node = nil
     resp = node_connection.post('/swarm/join', query, :body => join_options.to_json, expects: [200])
     nodes.each do |node|
       if (!node_ids_before.include? node.id)
+        new_node = node
         @node_hash[node.id] = {hash: node.hash, connection: node_connection}
       end
     end
+    return new_node
   end
   
   def connection
@@ -41,7 +48,7 @@ class Docker::Swarm::Swarm
         return node_info[:connection]
       end
     end
-    raise "No manager connection found for swarm"
+    return @manager_connection
   end
 
   def join_worker(node_connection)
@@ -53,6 +60,10 @@ class Docker::Swarm::Swarm
   end
 
   def remove
+    services().each do |service|
+      service.remove()
+    end
+    
     worker_nodes.each do |node|
       leave(node, true)
     end
@@ -138,7 +149,18 @@ class Docker::Swarm::Swarm
     hash = JSON.parse(response)
     return Docker::Swarm::Service.new(self, hash)
   end
-
+  
+  def services
+    items = []
+    query = {}
+    opts = {}
+    response = self.connection.get("/services", query, :body => opts.to_json)
+    hashes = JSON.parse(response)
+    hashes.each do |hash|
+      items << Docker::Swarm::Service.new(self, hash)
+    end
+    return items
+  end
 
   # Initialize Swarm
   def self.init(opts, connection)
@@ -164,9 +186,19 @@ class Docker::Swarm::Swarm
   def self.leave(force, connection)
     query = {}
     query['force'] = force
-    connection.post('/swarm/leave', query, expects: [200, 406])
+    response = connection.post('/swarm/leave', query, expects: [200, 406, 500], full_response: true)
+    if (response.status == 500)
+      raise "Error leaving: #{response.body}  HTTP-#{response.status}"
+    end
   end
   
+  def self.find(connection)
+    query = {}
+    response = connection.get('/swarm', query, expects: [200, 406], full_response: true)
+    if (response.status == 200)
+      return Docker::Swarm::Swarm.new(JSON.parse(response.body), connection)
+    end
+  end
   
 
 end

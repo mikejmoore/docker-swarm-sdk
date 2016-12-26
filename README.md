@@ -3,6 +3,7 @@
 Sample Usage
 ------------
 ```ruby
+ # Create a Swarm cluster
 master_connection = Docker::Swarm::Connection.new('http://10.20.30.1:2375')
 
  # Manager node intializes swarm

@@ -45,8 +45,24 @@ class Docker::Swarm::Node
     return @hash['Status']['State']
   end
   
-  def drain
+  def drain(opts = {})
     change_availability(:drain)
+    if (opts[:wait_for_drain])
+      opts[:wait_seconds]
+      while (running_tasks.length > 0)
+        puts "Waiting for node (#{host_name}) to drain.  Still has #{running_tasks.length} tasks running."
+      end
+    end
+  end
+  
+  def running_tasks
+    return tasks.select {|t| t.status == 'running'}
+  end
+  
+  def tasks
+    return @swarm.tasks.select {|t| 
+      t.node.id == self.id
+    }
   end
 
   def activate
@@ -54,19 +70,41 @@ class Docker::Swarm::Node
   end
   
   def remove
-    Docker::Swarm::Node.remove(id(), @connection)
+    leave(true)
+    refresh
+    start_time = Time.now
+    while (self.status != 'down')
+      refresh
+      raise "Node not down 60 seconds after leaving swarm: #{self.host_name}" if (Time.now.to_i - start_time.to_i > 60)
+    end
+    Docker::Swarm::Node.remove(self.id, @swarm.connection)
   end
   
-  def change_availability(availability)
+  def leave(force = true)
+    drain(wait_for_drain: true, wait_seconds: 60)
+    # change_availability(:active)
+    @swarm.leave(self, force)
+  end
+  
+  def change_availability(new_availability)
     raise "Bad availability param: #{availability}" if (!AVAILABILITY[availability])
-    @hash['Spec']['Availability'] = AVAILABILITY[availability]
-    query = {version: @hash['Version']['Index']}
-    response = @swarm.connection.post("/nodes/#{self.id}/update", query, :body => @hash['Spec'].to_json)
+    refresh
+    if (self.availability != new_availability)
+      @hash['Spec']['Availability'] = AVAILABILITY[new_availability]
+      query = {version: @hash['Version']['Index']}
+      response = @swarm.connection.post("/nodes/#{self.id}/update", query, :body => @hash['Spec'].to_json, expects: [200, 500], full_response: true)
+      if (response.status != 200)
+        raise "Error changing node availability: #{response.body} HTTP-#{response.status}"
+      end
+    end
   end
   
-  def remove
+  def self.remove(node_id, connection)
     query = {}
-    response = @swarm.connection.delete("/nodes/#{self.id}", query, expects: [200, 406])
+    response = connection.delete("/nodes/#{node_id}", query, expects: [200, 406, 500], full_response: true)
+    if (response.status != 200)
+      raise "Error deleting node: #{response.body}"
+    end
   end
   
   
