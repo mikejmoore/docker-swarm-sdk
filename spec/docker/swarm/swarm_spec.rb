@@ -63,11 +63,9 @@ describe Docker::Swarm::Swarm do
         "foo" => "bar"
       }
     }
-  
-  
+    
   def init_test_swarm(master_connection)
     master_ip = master_connection.url.split("//").last.split(":").first
-    
     master_swarm_port = 2377
     swarm_init_options = {
         "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
@@ -83,6 +81,42 @@ describe Docker::Swarm::Swarm do
 
     puts "Manager node intializing swarm"
     swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
+  end
+
+
+  it "Can attach to a running swarm" do
+
+    # CREATE A SWARM
+    master_connection = Docker::Swarm::Connection.new(ENV['SWARM_MASTER_ADDRESS'])
+    worker_connection = Docker::Swarm::Connection.new(ENV['SWARM_WORKER_ADDRESS'])
+    
+    puts "Clean up old swarm configs if they exist ..."
+    Docker::Swarm::Swarm.leave(true, worker_connection)
+    Docker::Swarm::Swarm.leave(true, master_connection)
+    
+    swarm = init_test_swarm(master_connection)
+    worker_node = swarm.join_worker(worker_connection)
+    expect(worker_node.hash).to_not be nil
+    
+    puts "Find, or create network for the test service ..."
+    network_name = 'network.1'
+    network = Docker::Swarm::Network::find_by_name(network_name, master_connection)
+    network = swarm.create_network(network_name) if (!network)
+    
+    puts "Config and create a test swarm ..."
+    service_create_options = DEFAULT_SERVICE_SETTINGS
+    service_create_options['TaskTemplate']['ContainerSpec']['Networks'] << network.id
+    service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
+    service_create_options["Mode"]["Replicated"]["Replicas"] = 20
+    service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
+    service = swarm.create_service(service_create_options)
+    expect(swarm.services.length).to eq 1
+    
+    # ATTACH TO EXISTING SWARM
+    swarm = Docker::Swarm::Swarm.find(master_connection, {discover_nodes: true, docker_api_port: 2375})
+    expect(swarm).to_not be nil
+    expect(swarm.services.length).to eq 1
+    expect(swarm.nodes.length).to eq 2
   end
   
   

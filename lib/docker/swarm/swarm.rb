@@ -5,16 +5,30 @@ class Docker::Swarm::Swarm
   include Docker
   attr_reader :worker_join_token, :manager_join_token, :id, :hash, :node_hash
 
-  def initialize(hash, manager_connection)
+  def initialize(hash, manager_connection, options = {})
     @hash = hash
 #    @manager_connection = manager_connection
     @id = hash['ID']
     @worker_join_token = hash['JoinTokens']['Worker']
     @manager_join_token = hash['JoinTokens']['Manager']
     @node_hash = {}
-    nodes(manager_connection).each do |node|
-      #  Resolv::DNS.new.getaddress("devlog")
-      @node_hash[node.id] = {hash: node.hash, connection: manager_connection}
+    @manager_connection = manager_connection
+    nodes.each do |node|
+      node_connection = nil
+      docker_port = options[:docker_api_port] || 2375
+      if (node.hash['ManagerStatus'])
+        ip_address = node.hash['ManagerStatus']['Addr'].split(":").first
+        manager_ip_address = @manager_connection.url.split('//').last.split(':').first
+        if (ip_address == manager_ip_address)
+          node.connection = @manager_connection
+        else
+          node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
+        end
+      else
+        ip_address = Resolv::DNS.new.getaddress(node.host_name())
+        node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
+      end
+      @node_hash[node.id] = {hash: node.hash, connection: node.connection}
       
     end
   end
@@ -118,15 +132,16 @@ class Docker::Swarm::Swarm
   end
   
   # Return all of the Nodes.
-  def nodes(conn = self.connection)
+  def nodes
     opts = {}
     query = {}
-    response = conn.get('/nodes', query, :body => opts.to_json, expects: [200, 406], full_response: true)
+    response = self.connection.get('/nodes', query, :body => opts.to_json, expects: [200, 406], full_response: true)
     if (response.status == 200)
       hashes = JSON.parse(response.body)
       nodes = []
       hashes.each do |node_hash|
-        nodes << Docker::Swarm::Node.new(self, node_hash)
+        node  = Docker::Swarm::Node.new(self, node_hash)
+        nodes << node
       end
       return nodes || []
     else
@@ -161,6 +176,11 @@ class Docker::Swarm::Swarm
     end
     return items
   end
+  
+  def discover_nodes
+    # {discover_nodes: true, worker_docker_port: 2375}
+    
+  end
 
   # Initialize Swarm
   def self.init(opts, connection)
@@ -192,11 +212,14 @@ class Docker::Swarm::Swarm
     end
   end
   
-  def self.find(connection)
+  def self.find(connection, options = {})
     query = {}
     response = connection.get('/swarm', query, expects: [200, 406], full_response: true)
     if (response.status == 200)
-      return Docker::Swarm::Swarm.new(JSON.parse(response.body), connection)
+      swarm = Docker::Swarm::Swarm.new(JSON.parse(response.body), connection, options)
+      return swarm
+    else 
+      raise "Error finding swarm: HTTP-#{response.status} #{response.body}"
     end
   end
   
