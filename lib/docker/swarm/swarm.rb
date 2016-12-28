@@ -1,4 +1,6 @@
 require 'docker-api'
+require 'resolv'
+
 
 # This class represents a Docker Swarm Node.
 class Docker::Swarm::Swarm
@@ -25,7 +27,16 @@ class Docker::Swarm::Swarm
           node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
         end
       else
-        ip_address = Resolv::DNS.new.getaddress(node.host_name())
+        ip_address = nil
+        begin
+          ip_address = Resolv::DNS.new.getaddress(node.host_name())
+        rescue
+          ip_address = Resolv::Hosts.new.getaddress(node.host_name())
+          if (!ip_address)
+            host_addresses = options[:host_addresses]
+            ip_address = host_addresses[node.host_name]
+          end
+        end
         node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
       end
       @node_hash[node.id] = {hash: node.hash, connection: node.connection}
@@ -120,15 +131,68 @@ class Docker::Swarm::Swarm
   end
   
   def networks
-    networks = Docker::Network.all({}, self.connection)
+    all_networks = []
+    response = connection.get("/networks", {}, full_response: true)
+    if (response.status == 200)
+      hashes = JSON.parse(response.body)
+      hashes.each do |hash|
+        all_networks << Docker::Swarm::Network.new(self, hash)
+      end
+    else
+      raise "Error finding netw"
+    end
+    return all_networks
   end
   
-  def create_network(network_name)
-    return Docker::Swarm::Network.create(network_name, opts = {}, self.connection)
+  def create_network(network_name, options = {})
+    defaults = {
+        "Name" => network_name,
+        "CheckDuplicate" => true,
+#        "Driver" => "bridge",
+        "Driver" => "overlay",
+        "EnableIPv6" => false,
+#         "IPAM" => {
+#           "Driver" => "default",
+#           "Config" => [
+#             {
+#              "Subnet" => "172.20.0.0/16",
+#              "IPRange" => "172.20.10.0/24",
+#              "Gateway" => "172.20.10.11"
+#             }
+#           ],
+#           "Options" => {
+# #            "foo" => "bar"
+#           }
+#          },
+        "Internal" => false,
+        "Options" => {
+            "com.docker.network.driver.overlay.vxlanid_list" => "257"
+        },
+        "Labels" => {
+          # "com.example.some-label": "some-value",
+          # "com.example.some-other-label": "some-other-value"
+        }
+      }
+      opts = defaults.merge(options)
+      response = connection.post('/networks/create', {},  body: opts.to_json, expects: [200, 201, 500], full_response: true)
+      if (response.status <= 201)
+        hash = JSON.parse(response.body)
+        response = connection.get("/networks/#{hash['Id']}", {}, expects: [200, 201], full_response: true)
+        hash = Docker::Util.parse_json(response.body)
+        network = Docker::Swarm::Network.new(self, hash)
+        return network
+      else
+        raise "Error creating network: HTTP-#{response.status} - #{response.body}"
+      end
   end
   
   def find_network_by_name(network_name)
-    return Docker::Swarm::Network::find_by_name(network_name, self.connection)
+    networks.each do |network|
+      if (network.name == network_name)
+        return network
+      end
+    end
+    return nil
   end
   
   # Return all of the Nodes.
@@ -151,10 +215,15 @@ class Docker::Swarm::Swarm
 
   def create_service(opts = {})
     query = {}
-    response = self.connection.post('/services/create', query, :body => opts.to_json)
-    info = JSON.parse(response)
-    service_id = info['ID']
-    return self.find_service(service_id)
+    response = self.connection.post('/services/create', query, :body => opts.to_json, expects: [201, 500], full_response: true)
+    if (response.status <= 201)
+      info = JSON.parse(response.body)
+      service_id = info['ID']
+      return self.find_service(service_id)
+    else
+      raise "Error creating service:  HTTP-#{response.status}  #{response.body}"
+    end
+    return nil
   end
   
   def find_service(id)
@@ -163,6 +232,13 @@ class Docker::Swarm::Swarm
     response = self.connection.get("/services/#{id}", query, :body => opts.to_json)
     hash = JSON.parse(response)
     return Docker::Swarm::Service.new(self, hash)
+  end
+  
+  def find_service_with_name(name)
+    services.each do |service|
+      return service if (service.name == name)
+    end
+    return nil
   end
   
   def services
@@ -218,6 +294,8 @@ class Docker::Swarm::Swarm
     if (response.status == 200)
       swarm = Docker::Swarm::Swarm.new(JSON.parse(response.body), connection, options)
       return swarm
+    elsif (response.status == 406)
+      return nil
     else 
       raise "Error finding swarm: HTTP-#{response.status} #{response.body}"
     end

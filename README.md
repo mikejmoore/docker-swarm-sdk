@@ -1,5 +1,11 @@
 # docker-swarm-api
 
+Must use Docker API Version of 1.24 or above.
+
+This project leverages swipely/docker-api, and adds Docker Swarm capability.
+
+Warning: cannot create overlay network in Docker Engine versions less than 1.13.  
+
 Sample Usage
 ------------
 ```ruby

@@ -61,7 +61,7 @@ class Docker::Swarm::Node
   
   def tasks
     return @swarm.tasks.select {|t| 
-      t.node.id == self.id
+      (t.node != nil) && (t.node.id == self.id)
     }
   end
 

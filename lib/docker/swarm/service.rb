@@ -8,9 +8,21 @@ class Docker::Swarm::Service
     @swarm = swarm
     @hash = hash
   end
+  
+  def name()
+    @hash['Spec']['Name']
+  end
 
   def id()
     return @hash['ID']
+  end
+  
+  def network_ids
+    network_ids = []
+    @hash['Endpoint']['VirtualIPs'].each do |network_info|
+      network_ids << network_info['NetworkID']
+    end
+    return network_ids
   end
   
   def remove(opts = {})

@@ -1,7 +1,6 @@
 require 'spec_helper'
 require_relative '../../../lib/docker-swarm'
 require 'retry_block'
-require 'byebug'
 
 
 #DOCKER_VERSION=1.12 SWARM_MASTER_ADDRESS=http://192.168.40.24:2375 SWARM_WORKER_ADDRESS=http://192.168.40.50:2375 RAILS_ENV=test rspec ./spec/docker/swarm/node_spec.rb
@@ -64,24 +63,6 @@ describe Docker::Swarm::Swarm do
       }
     }
     
-  def init_test_swarm(master_connection)
-    master_ip = master_connection.url.split("//").last.split(":").first
-    master_swarm_port = 2377
-    swarm_init_options = {
-        "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
-        "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
-        "ForceNewCluster" => false,
-        "Spec" => {
-          "Orchestration" => {},
-          "Raft" => {},
-          "Dispatcher" => {},
-          "CAConfig" => {}
-        }
-      }
-
-    puts "Manager node intializing swarm"
-    swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
-  end
 
 
   it "Can attach to a running swarm" do
@@ -98,14 +79,8 @@ describe Docker::Swarm::Swarm do
     worker_node = swarm.join_worker(worker_connection)
     expect(worker_node.hash).to_not be nil
     
-    puts "Find, or create network for the test service ..."
-    network_name = 'network.1'
-    network = Docker::Swarm::Network::find_by_name(network_name, master_connection)
-    network = swarm.create_network(network_name) if (!network)
-    
     puts "Config and create a test swarm ..."
     service_create_options = DEFAULT_SERVICE_SETTINGS
-    service_create_options['TaskTemplate']['ContainerSpec']['Networks'] << network.id
     service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
     service_create_options["Mode"]["Replicated"]["Replicas"] = 20
     service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
@@ -126,20 +101,17 @@ describe Docker::Swarm::Swarm do
     
     puts "Clean up old swarm configs if they exist ..."
     Docker::Swarm::Swarm.leave(true, worker_connection)
-    Docker::Swarm::Swarm.leave(true, master_connection)
+    begin
+      Docker::Swarm::Swarm.leave(true, master_connection)
+    rescue Exception => e
+    end
     
     swarm = init_test_swarm(master_connection)
     worker_node = swarm.join_worker(worker_connection)
     expect(worker_node.hash).to_not be nil
     
-    puts "Find, or create network for the test service ..."
-    network_name = 'network.1'
-    network = Docker::Swarm::Network::find_by_name(network_name, master_connection)
-    network = swarm.create_network(network_name) if (!network)
-    
     puts "Config and create a test swarm ..."
     service_create_options = DEFAULT_SERVICE_SETTINGS
-    service_create_options['TaskTemplate']['ContainerSpec']['Networks'] << network.id
     service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
     service_create_options["Mode"]["Replicated"]["Replicas"] = 20
     service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
@@ -187,7 +159,6 @@ describe Docker::Swarm::Swarm do
       master_ip = master_address.split("//").last.split(":").first
       worker_address = ENV['SWARM_WORKER_ADDRESS']
       worker_ip = worker_address.split("//").last.split(":").first
-      network_name = "app.1"
 
       master_connection = Docker::Swarm::Connection.new(master_address)
       worker_connection = Docker::Swarm::Connection.new(worker_address)
@@ -217,12 +188,8 @@ describe Docker::Swarm::Swarm do
         nodes = swarm.nodes
         expect(nodes.length).to eq 2
         expect(swarm.manager_nodes.length).to eq 1
-
-        network = Docker::Swarm::Network::find_by_name(network_name, master_connection)
-        network = swarm.create_network(network_name) if (!network)
         
         service_create_options = DEFAULT_SERVICE_SETTINGS
-        service_create_options['TaskTemplate']['ContainerSpec']['Networks'] << network.id
         service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
         service_create_options["Mode"]["Replicated"]["Replicas"] = 5
         service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]

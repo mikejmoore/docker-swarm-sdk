@@ -55,3 +55,23 @@ RSpec.configure do |config|
     config.filter_run_excluding :docker_1_10 => true
   end
 end
+
+def init_test_swarm(master_connection)
+  master_ip = master_connection.url.split("//").last.split(":").first
+  master_swarm_port = 2377
+  swarm_init_options = {
+      "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
+      "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
+      "ForceNewCluster" => false,
+      "Spec" => {
+        "Orchestration" => {},
+        "Raft" => {},
+        "Dispatcher" => {},
+        "CAConfig" => {}
+      }
+    }
+
+  puts "Manager node intializing swarm"
+  swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
+end
+
