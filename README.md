@@ -13,13 +13,11 @@ Warning: cannot create overlay network in Docker Engine versions less than 1.13 
 Sample Usage
 ------------
 ```ruby
- # Create a Swarm cluster
+ # Make a connection to the Swarm manager's API.  (Assumes port 2375 exposed for API)
 master_connection = Docker::Swarm::Connection.new('http://10.20.30.1:2375')
 
  # Manager node intializes swarm
-swarm_init_options = {
-"ListenAddr" => "0.0.0.0:2377",
-}
+swarm_init_options = { "ListenAddr" => "0.0.0.0:2377" }
 swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
 
 expect(swarm).to_not be nil
