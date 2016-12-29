@@ -116,7 +116,7 @@ service.scale(20)
  # Worker leaves the swarm - no forcing
 swarm.leave(false, worker_connection)
 
- # Manager leaves the swarm - forced because manager's need to force the issue.
+ # Manager leaves the swarm - forced because last manager needs to use 'force' to leave the issue.
 swarm.leave(true, master_connection)
 
 ```

@@ -144,7 +144,7 @@ class Docker::Swarm::Swarm
     return all_networks
   end
   
-  def create_network(network_name, options = {})
+  def create_network_overlay(network_name, options = {})
     defaults = {
         "Name" => network_name,
         "CheckDuplicate" => true,

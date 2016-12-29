@@ -24,7 +24,7 @@ describe Docker::Swarm::Network do
       network.remove
     end
     
-    network = swarm.create_network(network_name) if (!network)
+    network = swarm.create_network_overlay(network_name) if (!network)
     
     network_from_search = swarm.find_network_by_name(network_name)
     expect(network_from_search).to_not be nil
