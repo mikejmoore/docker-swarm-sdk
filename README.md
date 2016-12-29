@@ -2,9 +2,11 @@
 
 Ruby compatible API for managing Docker Swarm clusters.
 
+MIT License
+
 Must use Docker API Version of 1.24 or above.
 
-This project leverages swipely/docker-api, and adds Docker Swarm capability.
+This project leverages swipely/docker-api (https://github.com/swipely/docker-api), and adds Docker Swarm capability.
 
 Warning: cannot create overlay network in Docker Engine versions less than 1.13 (which is still categoriezed as Dev, not as stable).  
 
