@@ -20,23 +20,26 @@ master_connection = Docker::Swarm::Connection.new('http://10.20.30.1:2375')
 swarm_init_options = { "ListenAddr" => "0.0.0.0:2377" }
 swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
 
-expect(swarm).to_not be nil
-
-nodes = Docker::Swarm::Node.all({}, master_connection)
+ # Gather all nodes available to swarm (overlay and bridges)
+nodes = swarm.nodes()
 expect(nodes.length).to eq 1
 
  # Worker joins swarm
 worker_connection = Docker::Swarm::Connection.new('http://10.20.30.2:2375')
-swarm.join(worker_ip, worker_connection)
+swarm.join_worker(worker_connection)
+
+ # Join another manager to the swarm
+manager_2_connection = Docker::Swarm::Connection.new('http://10.20.30.3:2375')
+swarm.join_worker(manager_2_connection)
 
  # Gather all nodes of swarm
-nodes = swarm.nodes
+nodes = swarm.nodes()
 
  # Create a network which connect services
 network = swarm.create_network(network_name)
 
  # Find all networks in swarm cluster
-networks = swarm.networks
+networks = swarm.networks()
 
  # Create a service with 5 replicas
 service_create_options = {
@@ -98,25 +101,25 @@ service_create_options = {
 service = swarm.create_service(service_create_options)
 
  # Retrieve all manager nodes of swarm
-manager_nodes = swarm.manager_nodes
+manager_nodes = swarm.manager_nodes()
 
  # Retrieve all worker nodes (that aren't managers)
-worker_nodes = swarm.worker_nodes
+worker_nodes = swarm.worker_nodes()
 
  # Drain a worker node - stop hosting tasks/containers of services
 worker_node = worker_nodes.first
-worker_node.drain
+worker_node.drain()
 
  # Gather all tasks (containers for service) being hosted by the swarm cluster
-tasks = swarm.tasks
+tasks = swarm.tasks()
 
  # Scale up or down the number of replicas on a service
 service.scale(20)
       
  # Worker leaves the swarm - no forcing
-swarm.leave(false, worker_connection)
+swarm.leave(worker_node, node)
 
  # Manager leaves the swarm - forced because last manager needs to use 'force' to leave the issue.
-swarm.leave(true, master_connection)
+swarm.leave(manager_node, true)
 
 ```
