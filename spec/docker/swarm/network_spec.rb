@@ -14,17 +14,18 @@ describe Docker::Swarm::Network do
     
     puts "Clean up old swarm configs if they exist ..."
     Docker::Swarm::Swarm.leave(true, master_connection)
-    
     swarm = init_test_swarm(master_connection)
 
     puts "Find, or create network for the test service ..."
+
     network_name = "overlay#{Time.now.to_i}"
     network = swarm.find_network_by_name(network_name)
     if (network)
       network.remove
     end
     
-    network = swarm.create_network_overlay(network_name) if (!network)
+    subnet = "10.#{50 + Random.rand(10)}.0.0/20"
+    network = swarm.create_network_overlay(network_name)
     
     network_from_search = swarm.find_network_by_name(network_name)
     expect(network_from_search).to_not be nil
@@ -32,6 +33,10 @@ describe Docker::Swarm::Network do
     network.remove
     network_from_search = swarm.find_network_by_name(network_name)
     expect(network_from_search).to be nil
+  end
+  
+  it "Can attach service to an overlay network" do
+    service_create_options['Networks'] = [ {'Target' => network.id} ]
   end
   
   

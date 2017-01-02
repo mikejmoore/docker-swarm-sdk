@@ -59,7 +59,6 @@ describe Docker::Swarm::Swarm do
         ]
       },
       "Labels" => {
-        "foo" => "bar"
       }
     }
     
@@ -149,7 +148,8 @@ describe Docker::Swarm::Swarm do
   end
   
   
-  describe 'Swarm creation with 2 nodes' do
+  describe 'Swarm creation with 2 nodes add service and cleanup everything' do
+    
     it "Can add and scale service" do
       raise "Must define env variable: SWARM_MASTER_ADDRESS" if (!ENV['SWARM_MASTER_ADDRESS'])
       raise "Must define env variable: SWARM_WORKER_ADDRESS" if (!ENV['SWARM_WORKER_ADDRESS'])
@@ -165,6 +165,8 @@ describe Docker::Swarm::Swarm do
 
       Docker::Swarm::Swarm.leave(true, worker_connection)
       Docker::Swarm::Swarm.leave(true, master_connection)
+      
+      network_name = "overlay#{Time.now.to_i}"
 
       begin
         swarm = init_test_swarm(master_connection)
@@ -188,14 +190,20 @@ describe Docker::Swarm::Swarm do
         nodes = swarm.nodes
         expect(nodes.length).to eq 2
         expect(swarm.manager_nodes.length).to eq 1
+
+        network = swarm.find_network_by_name(network_name)
+        network.remove if (network)
+        network = swarm.create_network_overlay(network_name)
         
         service_create_options = DEFAULT_SERVICE_SETTINGS
         service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
         service_create_options["Mode"]["Replicated"]["Replicas"] = 5
         service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
-        service = swarm.create_service(service_create_options)
+        service_create_options['Networks'] = [ {'Target' => network.id} ]
 
+        service = swarm.create_service(service_create_options)
         expect(swarm.services.length).to eq 1
+        expect(service.network_ids).to include network.id
         
         retry_block(attempts: 20, :sleep => 1) do |attempt|
           puts "Waiting for tasks to start up..."
@@ -208,7 +216,6 @@ describe Docker::Swarm::Swarm do
           end
           expect(running_count).to eq 5
         end
-        
 
         manager_nodes = swarm.manager_nodes
         expect(manager_nodes.length).to eq 1
@@ -238,8 +245,9 @@ describe Docker::Swarm::Swarm do
         service.scale(10)
 
         retry_block(attempts: 20, :sleep => 1) do |attempt|
+          puts "Waiting for tasks to scale to 10"
           tasks = swarm.tasks
-          tasks.select! {|t| t.status != :shutdown}
+          tasks.select! {|t| t.status == :running}
           expect(tasks.length).to eq 10
         end
       
@@ -250,9 +258,16 @@ describe Docker::Swarm::Swarm do
           expect(worker_node.status).to eq 'down'
         end
 
-        tasks = swarm.tasks
-        tasks.select! {|t| t.status != :shutdown}
-        expect(tasks.length).to eq 10
+        
+        retry_block(attempts: 20, :sleep => 1) do |attempt|
+          tasks = swarm.tasks
+          tasks.select! {|t| t.status != :shutdown}
+          puts "Tasks after worker left:"
+          tasks.each do |task|
+            puts " - #{task.image}  #{task.status} #{task.service.name}"
+          end
+          expect(tasks.length).to eq 10
+        end
         
         worker_node.remove()
         expect(swarm.worker_nodes.length).to eq 0
@@ -267,6 +282,10 @@ describe Docker::Swarm::Swarm do
       ensure
         puts "Removing swarm ..."
         swarm.remove if (swarm)
+
+        puts "Remove network ..."
+        network = swarm.find_network_by_name(network_name)
+        network.remove if (network)
       end
       
     end

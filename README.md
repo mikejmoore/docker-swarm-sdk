@@ -1,14 +1,14 @@
 # docker-swarm-api
 
-Ruby compatible API for managing Docker Swarm clusters.
+Ruby GEM providing API for managing Docker Swarm clusters.
 
 MIT License
+
+Must use Docker Engine Version of 1.12 or above.  Docker Engine version 1.12.5 required to make overlay networks with API.
 
 Must use Docker API Version of 1.24 or above.
 
 This project leverages swipely/docker-api (https://github.com/swipely/docker-api), and adds Docker Swarm capability.
-
-Warning: cannot create overlay network in Docker Engine versions less than 1.13 (which is still categoriezed as Dev, not as stable).  
 
 Sample Usage
 ------------
@@ -36,68 +36,28 @@ swarm.join_worker(manager_2_connection)
 nodes = swarm.nodes()
 
  # Create a network which connect services
-network = swarm.create_network(network_name)
+network = swarm.create_overlay_network(network_name)
 
  # Find all networks in swarm cluster
 networks = swarm.networks()
 
  # Create a service with 5 replicas
-service_create_options = {
-    "Name" => "nginx",
-    "TaskTemplate" => {
-      "ContainerSpec" => {
-        "Networks" => [network.id],
-        "Image" => "nginx:1.11.7",
-        "Mounts" => [
-        ],
-        "User" => "root"
-      },
-      "Env" => ["TEST_ENV=test"],
-      "LogDriver" => {
-        "Name" => "json-file",
-        "Options" => {
-          "max-file" => "3",
-          "max-size" => "10M"
-        }
-      },
-       "Placement" => {},
-       "Resources" => {
-         "Limits" => {
-           "MemoryBytes" => 104857600
-         },
-         "Reservations" => {
-         }
-       },
-      "RestartPolicy" => {
-        "Condition" => "on-failure",
-        "Delay" => 1,
-        "MaxAttempts" => 3
-      }
-    },
-    "Mode" => {
-      "Replicated" => {
-        "Replicas" => 5
-      }
-    },
-    "UpdateConfig" => {
-      "Delay" => 2,
-      "Parallelism" => 2,
-      "FailureAction" => "pause"
-    },
-    "EndpointSpec" => {
-      "Ports" => [
-        {
-          "Protocol" => "tcp",
-          "PublishedPort" => 80,
-          "TargetPort" => 80
-        }
-      ]
-    },
-    "Labels" => {
-      "foo" => "bar"
-    }
-  }
-
+service_create_options = {"Name"=>"nginx",
+ "TaskTemplate" =>
+  {"ContainerSpec" =>
+    {"Networks" => [], "Image" => "nginx:1.11.7", "Mounts" => [], "User" => "root"},
+   "Env" => ["TEST_ENV=test"],
+   "LogDriver" => {"Name"=>"json-file", "Options"=>{"max-file"=>"3", "max-size"=>"10M"}},
+   "Placement" => {},
+   "Resources" => {"Limits"=>{"MemoryBytes"=>104857600}, "Reservations"=>{}},
+   "RestartPolicy" => {"Condition"=>"on-failure", "Delay"=>1, "MaxAttempts"=>3}},
+ "Mode"=>{"Replicated" => {"Replicas" => 5}},
+ "UpdateConfig" => {"Delay" => 2, "Parallelism" => 2, "FailureAction" => "pause"},
+ "EndpointSpec"=>
+  {"Ports" => [{"Protocol"=>"tcp", "PublishedPort" => 8181, "TargetPort" => 80}]},
+ "Labels" => {"layer" => "database"},
+ "Networks" => [{"Target" => "my-network"}]
+}
 service = swarm.create_service(service_create_options)
 
  # Retrieve all manager nodes of swarm

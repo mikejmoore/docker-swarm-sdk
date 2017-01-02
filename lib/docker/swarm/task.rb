@@ -19,6 +19,12 @@ class Docker::Swarm::Task
   def service_id
     @hash['ServiceID']
   end
+  
+  def service
+    return @swarm.services.find { |service|
+      self.service_id == service.id
+    }
+  end
 
   def node_id
     @hash['NodeID']
@@ -36,5 +42,15 @@ class Docker::Swarm::Task
     @hash['Status']['State'].to_sym
   end
 
+  def networks
+    all_networks = @swarm.networks
+    nets = []
+    self.hash['NetworksAttachments'].each do |net_hash|
+      hash = net_hash['Network']
+      network_id = hash['ID']
+      nets << all_networks.find {|net| net.id == network_id}
+    end
+    return nets
+  end
 
 end

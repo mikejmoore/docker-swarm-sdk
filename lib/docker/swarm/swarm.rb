@@ -144,46 +144,55 @@ class Docker::Swarm::Swarm
     return all_networks
   end
   
-  def create_network_overlay(network_name, options = {})
-    defaults = {
+  def create_network(options)
+    response = connection.post('/networks/create', {},  body: options.to_json, expects: [200, 201, 500], full_response: true)
+    if (response.status <= 201)
+      hash = JSON.parse(response.body)
+      response = connection.get("/networks/#{hash['Id']}", {}, expects: [200, 201], full_response: true)
+      hash = Docker::Util.parse_json(response.body)
+      network = Docker::Swarm::Network.new(self, hash)
+      return network
+    else
+      raise "Error creating network: HTTP-#{response.status} - #{response.body}"
+    end
+  end
+  
+  def create_network_overlay(network_name)
+    
+    max_vxlanid = 200
+    networks.each do |network|
+      if (network.driver == 'overlay')
+        if (network.hash['Options'])
+          vxlanid = network.hash['Options']["com.docker.network.driver.overlay.vxlanid_list"]
+          if (vxlanid) && (vxlanid.to_i > max_vxlanid)
+            max_vxlanid = vxlanid.to_i
+          end
+        end
+      end
+    end
+
+    options = {
         "Name" => network_name,
         "CheckDuplicate" => true,
-#        "Driver" => "bridge",
         "Driver" => "overlay",
         "EnableIPv6" => false,
-#         "IPAM" => {
-#           "Driver" => "default",
-#           "Config" => [
-#             {
-#              "Subnet" => "172.20.0.0/16",
-#              "IPRange" => "172.20.10.0/24",
-#              "Gateway" => "172.20.10.11"
-#             }
-#           ],
-#           "Options" => {
-# #            "foo" => "bar"
-#           }
-#          },
+        "IPAM" => {
+          "Driver" => "default",
+          "Config" => [
+          ],
+           "Options" => {
+           }
+        },
         "Internal" => false,
         "Options" => {
-            "com.docker.network.driver.overlay.vxlanid_list" => "257"
+            "com.docker.network.driver.overlay.vxlanid_list" => (max_vxlanid + 1).to_s
         },
         "Labels" => {
           # "com.example.some-label": "some-value",
           # "com.example.some-other-label": "some-other-value"
         }
       }
-      opts = defaults.merge(options)
-      response = connection.post('/networks/create', {},  body: opts.to_json, expects: [200, 201, 500], full_response: true)
-      if (response.status <= 201)
-        hash = JSON.parse(response.body)
-        response = connection.get("/networks/#{hash['Id']}", {}, expects: [200, 201], full_response: true)
-        hash = Docker::Util.parse_json(response.body)
-        network = Docker::Swarm::Network.new(self, hash)
-        return network
-      else
-        raise "Error creating network: HTTP-#{response.status} - #{response.body}"
-      end
+      create_network(options)
   end
   
   def find_network_by_name(network_name)
@@ -215,7 +224,7 @@ class Docker::Swarm::Swarm
 
   def create_service(opts = {})
     query = {}
-    response = self.connection.post('/services/create', query, :body => opts.to_json, expects: [201, 500], full_response: true)
+    response = self.connection.post('/services/create', query, :body => opts.to_json, expects: [201, 404, 409, 500], full_response: true)
     if (response.status <= 201)
       info = JSON.parse(response.body)
       service_id = info['ID']
@@ -234,7 +243,7 @@ class Docker::Swarm::Swarm
     return Docker::Swarm::Service.new(self, hash)
   end
   
-  def find_service_with_name(name)
+  def find_service_by_name(name)
     services.each do |service|
       return service if (service.name == name)
     end
@@ -253,11 +262,6 @@ class Docker::Swarm::Swarm
     return items
   end
   
-  def discover_nodes
-    # {discover_nodes: true, worker_docker_port: 2375}
-    
-  end
-
   # Initialize Swarm
   def self.init(opts, connection)
     query = {}
