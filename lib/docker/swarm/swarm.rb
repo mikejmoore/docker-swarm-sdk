@@ -9,7 +9,6 @@ class Docker::Swarm::Swarm
 
   def initialize(hash, manager_connection, options = {})
     @hash = hash
-#    @manager_connection = manager_connection
     @id = hash['ID']
     @worker_join_token = hash['JoinTokens']['Worker']
     @manager_join_token = hash['JoinTokens']['Manager']
