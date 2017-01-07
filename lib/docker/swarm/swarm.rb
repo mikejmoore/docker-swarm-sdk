@@ -15,55 +15,53 @@ class Docker::Swarm::Swarm
     @manager_join_token = hash['JoinTokens']['Manager']
     @node_hash = {}
     @manager_connection = manager_connection
-    nodes.each do |node|
-      node_connection = nil
-      docker_port = options[:docker_api_port] || 2375
-      if (node.hash['ManagerStatus'])
-        ip_address = node.hash['ManagerStatus']['Addr'].split(":").first
-        manager_ip_address = @manager_connection.url.split('//').last.split(':').first
-        if (ip_address == manager_ip_address)
-          node.connection = @manager_connection
-        else
-          node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
-        end
-      else
-        ip_address = nil
-        begin
-          ip_address = Resolv::DNS.new.getaddress(node.host_name())
-        rescue
-          ip_address = Resolv::Hosts.new.getaddress(node.host_name())
-          if (!ip_address)
-            host_addresses = options[:host_addresses]
-            ip_address = host_addresses[node.host_name]
-          end
-        end
-        node.connection = Docker::Swarm::Connection.new("tcp://#{ip_address}:#{docker_port}")
-      end
-      @node_hash[node.id] = {hash: node.hash, connection: node.connection}
-      
-    end
+  end
+  
+  def store_manager(manager_connection, listen_address_and_port)
+    node = nodes.find {|n| 
+      (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) && (n.hash['ManagerStatus']['Addr'] == listen_address_and_port) 
+    }
+    raise "Node not found for: #{listen_address}" if (!node)
+    @node_hash[node.id] = {hash: node.hash, connection: manager_connection}
   end
 
-  def join(node_connection, join_token)
+  def join(node_connection, join_token = nil, listen_address = "0.0.0.0:2377")
+    join_token = @worker_join_token
     node_ids_before = nodes().collect {|n| n.id}
     query = {}
     master_ip = self.connection.url.split("//").last.split(":").first
     new_node_ip = node_connection.url.split("//").last.split(":").first
+    
     join_options = {
-            "ListenAddr" => "0.0.0.0:2377",
+            "ListenAddr" => "#{listen_address}",
             "AdvertiseAddr" => "#{new_node_ip}:2377",
             "RemoteAddrs" => ["#{master_ip}:2377"],
             "JoinToken" => join_token
           }
     new_node = nil
-    resp = node_connection.post('/swarm/join', query, :body => join_options.to_json, expects: [200])
-    nodes.each do |node|
-      if (!node_ids_before.include? node.id)
-        new_node = node
-        @node_hash[node.id] = {hash: node.hash, connection: node_connection}
+    response = node_connection.post('/swarm/join', query, :body => join_options.to_json, expects: [200, 406, 500], full_response: true)
+    if (response.status == 200)
+      nodes.each do |node|
+        if (!node_ids_before.include? node.id)
+          new_node = node
+          @node_hash[node.id] = {hash: node.hash, connection: node_connection}
+        end
       end
+      return new_node
+    elsif (response.status == 406)
+      puts "Node is already part of a swarm - maybe this swarm, maybe another swarm."
+      return nil
+    else
+      raise "Error joining (#{node_connection}):  HTTP-#{response.status}  #{response.body}"
     end
-    return new_node
+  end
+
+  def join_worker(node_connection, listen_address = "0.0.0.0:2377")
+    join(node_connection, @worker_join_token)
+  end
+  
+  def join_manager(manager_connection, listen_address = "0.0.0.0:2377")
+    join(node_connection, @manager_join_token, listen_address)
   end
   
   def connection
@@ -74,14 +72,6 @@ class Docker::Swarm::Swarm
       end
     end
     return @manager_connection
-  end
-
-  def join_worker(node_connection)
-    join(node_connection, @worker_join_token)
-  end
-  
-  def join_manager(manager_connection)
-    join(node_connection, @manager_join_token)
   end
 
   def remove
@@ -158,7 +148,6 @@ class Docker::Swarm::Swarm
   end
   
   def create_network_overlay(network_name)
-    
     max_vxlanid = 200
     networks.each do |network|
       if (network.driver == 'overlay')
@@ -203,7 +192,7 @@ class Docker::Swarm::Swarm
     end
     return nil
   end
-  
+
   # Return all of the Nodes.
   def nodes
     opts = {}
@@ -265,15 +254,25 @@ class Docker::Swarm::Swarm
   # Initialize Swarm
   def self.init(opts, connection)
     query = {}
-    resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true)
-    return Docker::Swarm::Swarm.swarm(opts, connection)
+    resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true, expects: [200, 404, 500])
+    if (resp.status == 200)
+      swarm = Docker::Swarm::Swarm.swarm(opts, connection)
+      manager_node = swarm.nodes.find {|n|  
+        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) 
+      }
+      listen_address = manager_node.hash['ManagerStatus']['Addr']
+      swarm.store_manager(connection, listen_address)
+      return swarm
+    else
+      raise "Bad response: #{resp.status} #{resp.body}"
+    end
   end
 
   # docker swarm join-token -q worker
   def self.swarm(opts, connection)
     query = {}
-    resp = connection.get('/swarm', query, :body => opts.to_json, expects: [200, 406], full_response: true)
-    if (resp.status == 406)
+    resp = connection.get('/swarm', query, :body => opts.to_json, expects: [200, 404, 406], full_response: true)
+    if (resp.status == 406) || (resp.status == 404)
       return nil
     elsif (resp.status == 200)
       hash = JSON.parse(resp.body)
@@ -294,11 +293,16 @@ class Docker::Swarm::Swarm
   
   def self.find(connection, options = {})
     query = {}
-    response = connection.get('/swarm', query, expects: [200, 406], full_response: true)
+    response = connection.get('/swarm', query, expects: [200, 404, 406], full_response: true)
     if (response.status == 200)
       swarm = Docker::Swarm::Swarm.new(JSON.parse(response.body), connection, options)
+      manager_node = swarm.nodes.find {|n|  
+        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) 
+      }
+      listen_address = manager_node.hash['ManagerStatus']['Addr']
+      swarm.store_manager(connection, listen_address)
       return swarm
-    elsif (response.status == 406)
+    elsif (response.status > 200)
       return nil
     else 
       raise "Error finding swarm: HTTP-#{response.status} #{response.body}"
