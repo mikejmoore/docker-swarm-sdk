@@ -49,7 +49,6 @@ class Docker::Swarm::Service
     self.update(@hash['Spec'])
   end
 
-
   def self.DEFAULT_OPTIONS
     default_service_create_options = {
         "Name" => "<<Required>>",

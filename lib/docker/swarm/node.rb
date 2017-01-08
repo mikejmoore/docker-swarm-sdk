@@ -1,8 +1,6 @@
 # This class represents a Docker Swarm Node.
 class Docker::Swarm::Node
-  #include Docker::Base
-  attr_reader :hash
-  attr_accessor :connection
+  attr_reader :hash, :swarm
   AVAILABILITY = {
     active: "active",
     drain:  "drain"
@@ -25,6 +23,14 @@ class Docker::Swarm::Node
   
   def host_name
     return @hash['Description']['Hostname']
+  end
+  
+  def connection
+    if (@swarm) && (@swarm.node_hash[id()])
+      return @swarm.node_hash[id()][:connection]
+    else
+      return nil
+    end
   end
   
   def role
@@ -55,6 +61,15 @@ class Docker::Swarm::Node
     end
   end
   
+  def swarm_connection
+    node_hash = @swarm.node_hash[self.id]
+    if (node_hash)
+      return node_hash[:connection]
+    end
+    return nil
+  end
+
+  
   def running_tasks
     return tasks.select {|t| t.status == 'running'}
   end
@@ -80,6 +95,33 @@ class Docker::Swarm::Node
     Docker::Swarm::Node.remove(self.id, @swarm.connection)
   end
   
+  
+  def remove_network_with_name(network_name)
+    network = find_network_by_name(network_name)
+    self.remove_network(network) if (network)
+  end
+  
+  def remove_network(network)
+    attempts = 0
+    if (self.connection == nil)
+      puts "Warning:  node asked to remove network, but no connection for node: #{self.id} #{self.host_name}"
+    else
+      while (self.find_network_by_id(network.id) != nil)
+        response = self.connection.delete("/networks/#{network.id}", {}, expects: [204, 404, 500], full_response: true)
+        if (response.status == 500)
+          puts "Warning:  Deleting network (#{network.name}) from #{self.host_name} returned HTTP-#{response.status}  #{response.body}"
+        end
+  
+        sleep 1
+        attempts += 1
+        if (attempts > 30)
+          raise "Failed to remove network: #{network.name} from #{self.host_name}, operation timed out. Response: HTTP#{response.status}  #{response.body}"
+        end
+      end
+    end
+  end
+  
+  
   def leave(force = true)
     drain(wait_for_drain: true, wait_seconds: 60)
     # change_availability(:active)
@@ -99,12 +141,50 @@ class Docker::Swarm::Node
     end
   end
   
+  def networks()
+    if (connection)
+      return Docker::Swarm::Node.networks_on_host(connection, @swarm)
+    else
+      debugger
+      raise "No connection set for node: #{self.host_name}, ID: #{self.id}"
+    end
+  end
+  
+  def find_network_by_name(network_name)
+    networks.each do |network|
+      if (network.name == network_name)
+        return network
+      end
+    end
+    return nil
+  end
+
+  def find_network_by_id(network_id)
+    networks.each do |network|
+      if (network.id == network_id)
+        return network
+      end
+    end
+    return nil
+  end
+  
+  
   def self.remove(node_id, connection)
     query = {}
     response = connection.delete("/nodes/#{node_id}", query, expects: [200, 406, 500], full_response: true)
     if (response.status != 200)
-      raise "Error deleting node: #{response.body}"
+      raise "Error deleting node: HTTP-#{response.status} #{response.body}"
     end
+  end
+  
+  def self.networks_on_host(connection, swarm)
+    networks = []
+    response = connection.get("/networks", {}, full_response: true, expects: [200])
+    network_hashes = JSON.parse(response.body)
+    network_hashes.each do |network_hash|
+      networks << Docker::Swarm::Network.new(swarm, network_hash)
+    end
+    return networks
   end
   
   

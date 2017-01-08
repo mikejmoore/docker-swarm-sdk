@@ -18,8 +18,10 @@ describe Docker::Swarm::Network do
 
     puts "Find, or create network for the test service ..."
 
+    manager_node = swarm.manager_nodes.first
+
     network_name = "overlay#{Time.now.to_i}"
-    network = swarm.find_network_by_name(network_name)
+    network = manager_node.find_network_by_name(network_name)
     if (network)
       network.remove
     end
@@ -28,11 +30,11 @@ describe Docker::Swarm::Network do
     network = swarm.create_network_overlay(network_name)
     expect(network.driver).to eq "overlay"
     
-    network_from_search = swarm.find_network_by_name(network_name)
+    network_from_search = manager_node.find_network_by_name(network_name)
     expect(network_from_search).to_not be nil
     
     network.remove
-    network_from_search = swarm.find_network_by_name(network_name)
+    network_from_search = manager_node.find_network_by_name(network_name)
     expect(network_from_search).to be nil
     Docker::Swarm::Swarm.leave(true, master_connection)
   end
@@ -43,13 +45,14 @@ describe Docker::Swarm::Network do
     puts "Clean up old swarm configs if they exist ..."
     Docker::Swarm::Swarm.leave(true, master_connection)
     swarm = init_test_swarm(master_connection)
+    manager_node = swarm.manager_nodes.first
     networks = []
     
     # Create 10 networks and make sure they all have unique subnet
     used_subnets = []
     (1..10).each do |index|
       network_name = "network#{index}"
-      network = swarm.find_network_by_name(network_name)
+      network = manager_node.find_network_by_name(network_name)
       if (network)
         network.remove
       end

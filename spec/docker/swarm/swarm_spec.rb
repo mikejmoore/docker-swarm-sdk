@@ -105,15 +105,14 @@ describe Docker::Swarm::Swarm do
     rescue Exception => e
     end
     swarm = init_test_swarm(master_connection)
+    master_node = swarm.manager_nodes.first
     worker_node = swarm.join_worker(worker_connection)
     expect(worker_node.hash).to_not be nil
 
-    # Creating the network should make the overlay on the manager, but not on the worker.
-    # Network is copied over to workers after a service is created that uses the network.  The worker should show the network
-    # as a swarm overlay when the service is created.
-    network_name = "overlay#{Time.now.to_i}"
-    network = swarm.find_network_by_name(network_name)
-    network.remove if (network)
+    network_name = "test_network"
+    master_node.remove_network_with_name(network_name)
+    worker_node.remove_network_with_name(network_name)
+      
     network = swarm.create_network_overlay(network_name)
 
     puts "Config and create a test swarm ..."
@@ -122,12 +121,11 @@ describe Docker::Swarm::Swarm do
     service_create_options["Mode"]["Replicated"]["Replicas"] = 20
     service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
     service_create_options['Networks'] = [ {'Target' => network.id} ]
-
     
     service = swarm.create_service(service_create_options)
     expect(swarm.services.length).to eq 1
     
-    retry_block(attempts: 40, :sleep => 1) do |attempt|
+    retry_block(attempts: 100, :sleep => 1) do |attempt|
       tasks = swarm.tasks
       running_count = 0
       tasks.each do |task|
@@ -141,7 +139,6 @@ describe Docker::Swarm::Swarm do
     end
     
     puts "Removing worker node to force service to allocate tasks all to the master ..."
-    worker_node.remove()
     
     retry_block(attempts: 20, :sleep => 1) do |attempt|
       puts "Waiting for tasks to all relocate after removing worker node ..."
@@ -152,7 +149,11 @@ describe Docker::Swarm::Swarm do
       end
       expect(running_count).to eq 20
     end
+    service.remove()
+    network.remove()
     swarm.remove()
+
+    worker_node.remove_network(network)
   end
   
   
@@ -178,30 +179,40 @@ describe Docker::Swarm::Swarm do
 
       begin
         swarm = init_test_swarm(master_connection)
+        expect(swarm.node_hash.length).to eq 1
+        manager_node = swarm.manager_nodes.first
+        expect(manager_node).to_not be nil
+        expect(manager_node.connection).to_not be nil
+        
         
         expect(swarm.connection).to eq master_connection
-        swarm = Docker::Swarm::Swarm.find(master_connection)
-        expect(swarm.connection).to_not be nil
+        read_back_swarm = Docker::Swarm::Swarm.find(master_connection)
+        expect(read_back_swarm.connection).to_not be nil
     
         puts "Getting info about new swarm environment"
-        swarm = Docker::Swarm::Swarm.swarm({}, master_connection)
-        expect(swarm).to_not be nil
+        read_back_swarm = Docker::Swarm::Swarm.swarm({}, master_connection)
+        expect(read_back_swarm).to_not be nil
       
         nodes = swarm.nodes()
         expect(nodes.length).to eq 1
         expect(swarm.manager_nodes.length).to eq 1
 
         puts "Worker joining swarm"
-        swarm.join_worker(worker_connection)
+        worker_node = swarm.join_worker(worker_connection)
+        expect(worker_node.connection).to_not be nil
+        expect(manager_node.connection).to_not be nil
+        expect(swarm.node_hash.length).to eq 2
       
         puts "View all nodes of swarm (count should be 2)"
         nodes = swarm.nodes
         expect(nodes.length).to eq 2
         expect(swarm.manager_nodes.length).to eq 1
 
-        network = swarm.find_network_by_name(network_name)
+        network = manager_node.find_network_by_name(network_name)
         network.remove if (network)
         network = swarm.create_network_overlay(network_name)
+        
+        puts "Network #{network_name} subnets: #{network.subnets}"
         
         service_create_options = DEFAULT_SERVICE_SETTINGS
         service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
@@ -212,7 +223,15 @@ describe Docker::Swarm::Swarm do
         service = swarm.create_service(service_create_options)
         
         expect(swarm.services.length).to eq 1
-        expect(service.network_ids).to include network.id
+
+        # Can take a little bit of time for network to appear on service
+        retry_block(attempts: 10, :sleep => 1) do |attempt|
+          service = swarm.services.first
+          puts "Waiting for network to appear on service"
+          expect(service.network_ids).to include network.id
+        end
+
+        
         retry_block(attempts: 20, :sleep => 1) do |attempt|
           tasks = swarm.tasks
           running_count = 0
@@ -235,6 +254,10 @@ describe Docker::Swarm::Swarm do
         worker_node = worker_nodes.first
         worker_node.drain
 
+        # Having consistency problems with some tasks showing error: "failed to allocate gateway (10.27.0.1): Address already in
+        # use"
+        # Problem is that new subnet IP is calculated to be unique on manager node, but worker nodes might have left over
+        # networks that use same subnet IP.  Deleting networks through API leaves worker overlay networks in place.
         retry_block(attempts: 20, :sleep => 1) do |attempt|
           puts "Waiting for node to drain and tasks to relocate..."
           tasks = swarm.tasks
@@ -262,8 +285,8 @@ describe Docker::Swarm::Swarm do
         puts "Worker leaves the swarm"
         worker_node.leave
         retry_block(attempts: 20, :sleep => 1) do |attempt|
-          worker_node.refresh
-          expect(worker_node.status).to eq 'down'
+          expect(swarm.worker_nodes.length).to eq 1
+          expect(swarm.worker_nodes.first.status).to eq 'down'
         end
 
         
@@ -277,6 +300,7 @@ describe Docker::Swarm::Swarm do
           expect(tasks.length).to eq 10
         end
         
+        worker_node.remove_network(network)
         worker_node.remove()
         expect(swarm.worker_nodes.length).to eq 0
       
@@ -287,6 +311,7 @@ describe Docker::Swarm::Swarm do
           tasks = swarm.tasks
           expect(tasks.length).to eq 0
         end
+        network.remove()
       ensure
         if (swarm)
           puts "Removing swarm ..."

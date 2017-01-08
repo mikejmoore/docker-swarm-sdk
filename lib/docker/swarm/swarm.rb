@@ -7,15 +7,6 @@ class Docker::Swarm::Swarm
   include Docker
   attr_reader :worker_join_token, :manager_join_token, :id, :hash, :node_hash
 
-  def initialize(hash, manager_connection, options = {})
-    @hash = hash
-    @id = hash['ID']
-    @worker_join_token = hash['JoinTokens']['Worker']
-    @manager_join_token = hash['JoinTokens']['Manager']
-    @node_hash = {}
-    @manager_connection = manager_connection
-  end
-  
   def store_manager(manager_connection, listen_address_and_port)
     node = nodes.find {|n| 
       (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) && (n.hash['ManagerStatus']['Addr'] == listen_address_and_port) 
@@ -23,6 +14,11 @@ class Docker::Swarm::Swarm
     raise "Node not found for: #{listen_address}" if (!node)
     @node_hash[node.id] = {hash: node.hash, connection: manager_connection}
   end
+
+  def update_data(hash)
+    @hash = hash
+  end
+ 
 
   def join(node_connection, join_token = nil, listen_address = "0.0.0.0:2377")
     join_token = @worker_join_token
@@ -100,7 +96,6 @@ class Docker::Swarm::Swarm
   end
 
   def leave(node, force = false)
-    node.connection = self.connection
     node_info = @node_hash[node.id]
     if (node_info)
       Docker::Swarm::Swarm.leave(force, node_info[:connection])
@@ -147,41 +142,46 @@ class Docker::Swarm::Swarm
   end
   
   def create_network_overlay(network_name)
-    subnet_16_parts = [10, 11, 0, 0]
-    
+    subnet_16_parts = [10, 10, 0, 0]
     max_vxlanid = 200
-    networks.each do |network|
-      if (network.driver == 'overlay')
-        if (network.hash['Options'])
-          vxlanid = network.hash['Options']["com.docker.network.driver.overlay.vxlanid_list"]
-          if (vxlanid) && (vxlanid.to_i > max_vxlanid)
-            max_vxlanid = vxlanid.to_i
+    
+    # Sometimes nodes have leftover networks not on other nodes, that have subnets that can't be duplicated in
+    # the new overlay network.
+    nodes.each do |node|
+      node.networks.each do |network|
+        if (network.driver == 'overlay')
+          if (network.hash['Options'])
+            vxlanid = network.hash['Options']["com.docker.network.driver.overlay.vxlanid_list"]
+            if (vxlanid) && (vxlanid.to_i > max_vxlanid)
+              max_vxlanid = vxlanid.to_i
+            end
           end
         end
-      end
       
-      # Make sure our new network doesn't duplicate subnet of other network.
-      if (network.hash['IPAM']) && (network.hash['IPAM']['Config'])
-        network.hash['IPAM']['Config'].each do |subnet_config|
-          if (subnet_config['Subnet'])
-            subnet = subnet_config['Subnet']
-            subnet = subnet.split(".")
-            if (subnet[0] == '10') && (subnet[1] == '255')
-            else
-              if (subnet[0].to_i == subnet_16_parts[0])
-                if (subnet[1].to_i >= subnet_16_parts[1])
-                  subnet_16_parts[1] = subnet[1].to_i + 1
-                  if (subnet_16_parts[1] >= 255)
-                    raise "Ran out of subnets"
+        # Make sure our new network doesn't duplicate subnet of other network.
+        if (network.hash['IPAM']) && (network.hash['IPAM']['Config'])
+          network.hash['IPAM']['Config'].each do |subnet_config|
+            if (subnet_config['Subnet'])
+              subnet = subnet_config['Subnet']
+              subnet = subnet.split(".")
+              if (subnet[0] == '10') && (subnet[1] == '255')
+              else
+                if (subnet[0].to_i == subnet_16_parts[0])
+                  if (subnet[1].to_i >= subnet_16_parts[1])
+                    subnet_16_parts[1] = subnet[1].to_i + 1
+                    if (subnet_16_parts[1] >= 255)
+                      raise "Ran out of subnets"
+                    end
                   end
                 end
               end
+  #            subnet_config['Gateway']
             end
-#            subnet_config['Gateway']
           end
         end
       end
     end
+    
 
     options = {
         "Name" => network_name,
@@ -192,8 +192,8 @@ class Docker::Swarm::Swarm
           "Driver" => "default",
           "Config" => [
             {
-             "Subnet": "#{subnet_16_parts.join(".")}/16",
-             "Gateway": "#{subnet_16_parts[0, 3].join('.')}.1"
+             "Subnet" => "#{subnet_16_parts.join(".")}/16",
+             "Gateway"=> "#{subnet_16_parts[0, 3].join('.')}.1"
            }
           ],
            "Options" => {
@@ -211,15 +211,6 @@ class Docker::Swarm::Swarm
       create_network(options)
   end
   
-  def find_network_by_name(network_name)
-    networks.each do |network|
-      if (network.name == network_name)
-        return network
-      end
-    end
-    return nil
-  end
-
   # Return all of the Nodes.
   def nodes
     opts = {}
@@ -278,10 +269,11 @@ class Docker::Swarm::Swarm
     return items
   end
   
+  
   # Initialize Swarm
   def self.init(opts, connection)
     query = {}
-    resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true, expects: [200, 404, 500])
+    resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true, expects: [200, 404, 406, 500])
     if (resp.status == 200)
       swarm = Docker::Swarm::Swarm.swarm(opts, connection)
       manager_node = swarm.nodes.find {|n|  
@@ -296,14 +288,19 @@ class Docker::Swarm::Swarm
   end
 
   # docker swarm join-token -q worker
-  def self.swarm(opts, connection)
+  def self.swarm(options, connection)
     query = {}
-    resp = connection.get('/swarm', query, :body => opts.to_json, expects: [200, 404, 406], full_response: true)
+    resp = connection.get('/swarm', query, :body => options.to_json, expects: [200, 404, 406], full_response: true)
     if (resp.status == 406) || (resp.status == 404)
       return nil
     elsif (resp.status == 200)
       hash = JSON.parse(resp.body)
-      return Docker::Swarm::Swarm.new(hash, connection)
+      swarm = self.find_swarm_for_id(hash['ID'])  
+      if (swarm)
+        swarm.update_data(hash)
+      else
+        swarm = Docker::Swarm::Swarm.new(hash, connection, options)
+      end
     else
       raise "Bad response: #{resp.status} #{resp.body}"
     end
@@ -322,7 +319,13 @@ class Docker::Swarm::Swarm
     query = {}
     response = connection.get('/swarm', query, expects: [200, 404, 406], full_response: true)
     if (response.status == 200)
-      swarm = Docker::Swarm::Swarm.new(JSON.parse(response.body), connection, options)
+      hash = JSON.parse(response.body)
+      swarm = self.find_swarm_for_id(hash['ID'])  
+      if (swarm)
+        swarm.update_data(hash)
+      else
+        swarm = Docker::Swarm::Swarm.new(hash, connection, options)
+      end
       manager_node = swarm.nodes.find {|n|  
         (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) 
       }
@@ -335,6 +338,26 @@ class Docker::Swarm::Swarm
       raise "Error finding swarm: HTTP-#{response.status} #{response.body}"
     end
   end
+  
+  
+ private
+ @@swarms = {}
+ 
+ def self.find_swarm_for_id(swarm_id)
+   return @@swarms[swarm_id]
+ end
+ 
+ def initialize(hash, manager_connection, options = {})
+   @hash = hash
+   @id = hash['ID']
+   @worker_join_token = hash['JoinTokens']['Worker']
+   @manager_join_token = hash['JoinTokens']['Manager']
+   @node_hash = {}
+   @manager_connection = manager_connection
+   @@swarms[@id] = self
+ end
+ 
+ 
   
 
 end

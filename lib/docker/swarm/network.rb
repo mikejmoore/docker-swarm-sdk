@@ -30,24 +30,15 @@ class Docker::Swarm::Network
     end
     return []
   end
-  
 
   def remove
-    network_name = name
-    response = @swarm.connection.delete("/networks/#{id()}", {}, expects: [200, 204, 500], full_response: true)
-    if (response.status > 204)
-      raise "Error deleting network (#{name})  HTTP-#{response.status}  #{response.body}"
-    end
-    
-    attempts = 0
-    while (@swarm.find_network_by_name(network_name) != nil)
-      sleep 1
-      attempts += 1
-      if (attempts > 30)
-        raise "Failed to remove network: #{network_name}, operation timed out. Response: HTTP#{response.status}  #{response.body}"
+    if (@swarm)
+      @swarm.nodes.each do |node|
+        node.remove_network(self)
       end
     end
   end
+  
 end
 
 # EXAMPLE INSPECT OF OVERLAY NETWORK:

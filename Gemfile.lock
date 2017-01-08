@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    docker-swarm-api (1.2.3)
+    docker-swarm-api (1.2.4)
       docker-api (>= 1.33.1)
       json
       retry_block (>= 1.2.0)
