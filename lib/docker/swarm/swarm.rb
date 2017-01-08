@@ -147,6 +147,8 @@ class Docker::Swarm::Swarm
   end
   
   def create_network_overlay(network_name)
+    subnet_16_parts = [10, 11, 0, 0]
+    
     max_vxlanid = 200
     networks.each do |network|
       if (network.driver == 'overlay')
@@ -154,6 +156,28 @@ class Docker::Swarm::Swarm
           vxlanid = network.hash['Options']["com.docker.network.driver.overlay.vxlanid_list"]
           if (vxlanid) && (vxlanid.to_i > max_vxlanid)
             max_vxlanid = vxlanid.to_i
+          end
+        end
+      end
+      
+      # Make sure our new network doesn't duplicate subnet of other network.
+      if (network.hash['IPAM']) && (network.hash['IPAM']['Config'])
+        network.hash['IPAM']['Config'].each do |subnet_config|
+          if (subnet_config['Subnet'])
+            subnet = subnet_config['Subnet']
+            subnet = subnet.split(".")
+            if (subnet[0] == '10') && (subnet[1] == '255')
+            else
+              if (subnet[0].to_i == subnet_16_parts[0])
+                if (subnet[1].to_i >= subnet_16_parts[1])
+                  subnet_16_parts[1] = subnet[1].to_i + 1
+                  if (subnet_16_parts[1] >= 255)
+                    raise "Ran out of subnets"
+                  end
+                end
+              end
+            end
+#            subnet_config['Gateway']
           end
         end
       end
@@ -167,13 +191,17 @@ class Docker::Swarm::Swarm
         "IPAM" => {
           "Driver" => "default",
           "Config" => [
+            {
+             "Subnet": "#{subnet_16_parts.join(".")}/16",
+             "Gateway": "#{subnet_16_parts[0, 3].join('.')}.1"
+           }
           ],
            "Options" => {
            }
         },
         "Internal" => false,
         "Options" => {
-            "com.docker.network.driver.overlay.vxlanid_list" => (max_vxlanid + 1).to_s
+          "com.docker.network.driver.overlay.vxlanid_list" => (max_vxlanid + 1).to_s
         },
         "Labels" => {
           # "com.example.some-label": "some-value",

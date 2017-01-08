@@ -23,6 +23,14 @@ class Docker::Swarm::Network
   def driver
     return @hash['Driver']
   end
+  
+  def subnets
+    if (@hash['IPAM']) && (@hash['IPAM']['Config'])
+      return @hash['IPAM']['Config']
+    end
+    return []
+  end
+  
 
   def remove
     network_name = name
@@ -30,8 +38,14 @@ class Docker::Swarm::Network
     if (response.status > 204)
       raise "Error deleting network (#{name})  HTTP-#{response.status}  #{response.body}"
     end
+    
+    attempts = 0
     while (@swarm.find_network_by_name(network_name) != nil)
       sleep 1
+      attempts += 1
+      if (attempts > 30)
+        raise "Failed to remove network: #{network_name}, operation timed out. Response: HTTP#{response.status}  #{response.body}"
+      end
     end
   end
 end

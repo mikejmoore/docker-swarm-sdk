@@ -25,8 +25,10 @@ class Docker::Swarm::Service
   
   def network_ids
     network_ids = []
-    @hash['Endpoint']['VirtualIPs'].each do |network_info|
-      network_ids << network_info['NetworkID']
+    if (@hash['Endpoint']['VirtualIPs'])
+      @hash['Endpoint']['VirtualIPs'].each do |network_info|
+        network_ids << network_info['NetworkID']
+      end
     end
     return network_ids
   end

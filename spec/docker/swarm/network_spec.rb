@@ -24,8 +24,9 @@ describe Docker::Swarm::Network do
       network.remove
     end
     
-    subnet = "10.#{50 + Random.rand(10)}.0.0/20"
+    #subnet = "10.#{50 + Random.rand(10)}.0.0/20"
     network = swarm.create_network_overlay(network_name)
+    expect(network.driver).to eq "overlay"
     
     network_from_search = swarm.find_network_by_name(network_name)
     expect(network_from_search).to_not be nil
@@ -33,11 +34,41 @@ describe Docker::Swarm::Network do
     network.remove
     network_from_search = swarm.find_network_by_name(network_name)
     expect(network_from_search).to be nil
+    Docker::Swarm::Swarm.leave(true, master_connection)
   end
   
-  it "Can attach service to an overlay network" do
-    service_create_options['Networks'] = [ {'Target' => network.id} ]
+  it "Creating overlay network creates a unique subnet" do
+    master_connection = Docker::Swarm::Connection.new(ENV['SWARM_MASTER_ADDRESS'])
+    
+    puts "Clean up old swarm configs if they exist ..."
+    Docker::Swarm::Swarm.leave(true, master_connection)
+    swarm = init_test_swarm(master_connection)
+    networks = []
+    
+    # Create 10 networks and make sure they all have unique subnet
+    used_subnets = []
+    (1..10).each do |index|
+      network_name = "network#{index}"
+      network = swarm.find_network_by_name(network_name)
+      if (network)
+        network.remove
+      end
+      network = swarm.create_network_overlay(network_name)
+      networks << network
+
+      expect(network.subnets.length).to eq 1
+      network.subnets.each do |sub_config| 
+        subnet = sub_config['Subnet']
+        expect(subnet.length > 1).to be true
+        expect(used_subnets.include? subnet).to be false
+        used_subnets << subnet
+      end
+    end
+    expect(used_subnets.length).to eq 10
+    networks.each do |network|
+      network.remove
+    end
+    Docker::Swarm::Swarm.leave(true, master_connection)
   end
-  
   
 end

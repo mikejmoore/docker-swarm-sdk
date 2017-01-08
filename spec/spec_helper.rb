@@ -1,4 +1,5 @@
 require 'bundler/setup'
+require 'resolv'
 
 $LOAD_PATH.unshift(File.join(File.dirname(__FILE__), '..', 'lib'))
 
@@ -17,6 +18,11 @@ require 'docker'
 ENV['DOCKER_API_USER']  ||= 'debbie_docker'
 ENV['DOCKER_API_PASS']  ||= '*************'
 ENV['DOCKER_API_EMAIL'] ||= 'debbie_docker@example.com'
+
+ENV['SWARM_MASTER_ADDRESS'] ||= "http://#{Resolv.getaddress("core-01")}:2375"
+ENV['SWARM_MASTER_LISTEN_ADDRESS'] ||= "0.0.0.0"
+ENV['SWARM_WORKER_ADDRESS'] ||= "http://#{Resolv.getaddress("core-02")}:2375"
+
 
 RSpec.shared_context "local paths" do
   def project_dir
@@ -56,11 +62,11 @@ RSpec.configure do |config|
   end
 end
 
-def init_test_swarm(master_connection)
+def init_test_swarm(master_connection, master_listen_address = "0.0.0.0")
   master_ip = master_connection.url.split("//").last.split(":").first
   master_swarm_port = 2377
   swarm_init_options = {
-      "ListenAddr" => "0.0.0.0:#{master_swarm_port}",
+      "ListenAddr" => "#{ENV['SWARM_MASTER_LISTEN_ADDRESS']}:#{master_swarm_port}",
       "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
       "ForceNewCluster" => false,
       "Spec" => {

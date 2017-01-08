@@ -3,7 +3,9 @@ require_relative '../../../lib/docker-swarm'
 require 'retry_block'
 
 
-#DOCKER_VERSION=1.12 SWARM_MASTER_ADDRESS=http://192.168.40.24:2375 SWARM_WORKER_ADDRESS=http://192.168.40.50:2375 RAILS_ENV=test rspec ./spec/docker/swarm/node_spec.rb
+#DOCKER_VERSION=1.12 
+#SWARM_MASTER_ADDRESS=http://core-01:2375 
+#SWARM_WORKER_ADDRESS=http://core-02:2375 RAILS_ENV=test rspec ./spec/docker/swarm/node_spec.rb
 
 describe Docker::Swarm::Swarm do
   
@@ -15,7 +17,6 @@ describe Docker::Swarm::Swarm do
           "Image" => "nginx:1.11.7",
           "Mounts" => [
           ],
-          "User" => "root"
         },
         "Env" => ["TEST_ENV=test"],
         "LogDriver" => {
@@ -46,7 +47,7 @@ describe Docker::Swarm::Swarm do
       },
       "UpdateConfig" => {
         "Delay" => 2,
-        "Parallelism" => 2,
+        "Parallelism" => 1,
         "FailureAction" => "pause"
       },
       "EndpointSpec" => {
@@ -65,7 +66,6 @@ describe Docker::Swarm::Swarm do
 
 
   it "Can attach to a running swarm" do
-
     # CREATE A SWARM
     master_connection = Docker::Swarm::Connection.new(ENV['SWARM_MASTER_ADDRESS'])
     worker_connection = Docker::Swarm::Connection.new(ENV['SWARM_WORKER_ADDRESS'])
@@ -74,7 +74,7 @@ describe Docker::Swarm::Swarm do
     Docker::Swarm::Swarm.leave(true, worker_connection)
     Docker::Swarm::Swarm.leave(true, master_connection)
     
-    swarm = init_test_swarm(master_connection)
+    swarm = init_test_swarm(master_connection, ENV['SWARM_MASTER_ADDRESS'].split("//").last.split(":").first)
     worker_node = swarm.join_worker(worker_connection)
     expect(worker_node.hash).to_not be nil
     
@@ -85,7 +85,6 @@ describe Docker::Swarm::Swarm do
     service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
     service = swarm.create_service(service_create_options)
     expect(swarm.services.length).to eq 1
-    
     # ATTACH TO EXISTING SWARM
     swarm = Docker::Swarm::Swarm.find(master_connection, {discover_nodes: true, docker_api_port: 2375})
     expect(swarm).to_not be nil
@@ -98,28 +97,37 @@ describe Docker::Swarm::Swarm do
     master_connection = Docker::Swarm::Connection.new(ENV['SWARM_MASTER_ADDRESS'])
     worker_connection = Docker::Swarm::Connection.new(ENV['SWARM_WORKER_ADDRESS'])
     
+#    swarm = Docker::Swarm::Swarm.find(master_connection)
     puts "Clean up old swarm configs if they exist ..."
     Docker::Swarm::Swarm.leave(true, worker_connection)
     begin
       Docker::Swarm::Swarm.leave(true, master_connection)
     rescue Exception => e
     end
-    
     swarm = init_test_swarm(master_connection)
     worker_node = swarm.join_worker(worker_connection)
     expect(worker_node.hash).to_not be nil
-    
+
+    # Creating the network should make the overlay on the manager, but not on the worker.
+    # Network is copied over to workers after a service is created that uses the network.  The worker should show the network
+    # as a swarm overlay when the service is created.
+    network_name = "overlay#{Time.now.to_i}"
+    network = swarm.find_network_by_name(network_name)
+    network.remove if (network)
+    network = swarm.create_network_overlay(network_name)
+
     puts "Config and create a test swarm ..."
     service_create_options = DEFAULT_SERVICE_SETTINGS
     service_create_options['TaskTemplate']['Env'] << "TEST_ENV=test"
     service_create_options["Mode"]["Replicated"]["Replicas"] = 20
     service_create_options["EndpointSpec"]["Ports"] = [{"Protocol" => "tcp", "PublishedPort" => 8181, "TargetPort" => 80}]
-    service = swarm.create_service(service_create_options)
+    service_create_options['Networks'] = [ {'Target' => network.id} ]
+
     
+    service = swarm.create_service(service_create_options)
     expect(swarm.services.length).to eq 1
     
     retry_block(attempts: 40, :sleep => 1) do |attempt|
-      puts "Waiting for tasks to start up..."
       tasks = swarm.tasks
       running_count = 0
       tasks.each do |task|
@@ -127,6 +135,7 @@ describe Docker::Swarm::Swarm do
           running_count += 1
         end
       end
+      puts "Waiting for tasks to start up. Count: #{running_count}"
       expect(running_count).to eq 20
       sleep 1
     end
@@ -143,7 +152,6 @@ describe Docker::Swarm::Swarm do
       end
       expect(running_count).to eq 20
     end
-    
     swarm.remove()
   end
   
@@ -202,11 +210,10 @@ describe Docker::Swarm::Swarm do
         service_create_options['Networks'] = [ {'Target' => network.id} ]
 
         service = swarm.create_service(service_create_options)
+        
         expect(swarm.services.length).to eq 1
         expect(service.network_ids).to include network.id
-        
         retry_block(attempts: 20, :sleep => 1) do |attempt|
-          puts "Waiting for tasks to start up..."
           tasks = swarm.tasks
           running_count = 0
           tasks.each do |task|
@@ -214,6 +221,7 @@ describe Docker::Swarm::Swarm do
               running_count += 1
             end
           end
+          puts "Waiting for tasks to start up.  Count: #{running_count}"
           expect(running_count).to eq 5
         end
 
@@ -280,12 +288,10 @@ describe Docker::Swarm::Swarm do
           expect(tasks.length).to eq 0
         end
       ensure
-        puts "Removing swarm ..."
-        swarm.remove if (swarm)
-
-        puts "Remove network ..."
-        network = swarm.find_network_by_name(network_name)
-        network.remove if (network)
+        if (swarm)
+          puts "Removing swarm ..."
+          swarm.remove 
+        end
       end
       
     end

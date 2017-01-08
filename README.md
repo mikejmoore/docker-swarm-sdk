@@ -30,7 +30,7 @@ swarm.join_worker(worker_connection)
 
  # Join another manager to the swarm
 manager_2_connection = Docker::Swarm::Connection.new('http://10.20.30.3:2375')
-swarm.join_worker(manager_2_connection)
+swarm.join_manager(manager_2_connection)
 
  # Gather all nodes of swarm
 nodes = swarm.nodes()
