@@ -8,6 +8,9 @@ Must use Docker Engine Version of 1.12 or above.  Docker Engine version 1.12.5 r
 
 Must use Docker API Version of 1.24 or above.
 
+
+Docker Swarm is improving rapidly.  The controls for services has seen great improvements lately.  This GEM helps connect your Ruby scripts/applications to create and extend your swarm and then manage services upon the swarm.
+
 This project leverages swipely/docker-api (https://github.com/swipely/docker-api), and adds Docker Swarm capability.
 
 Sample Usage

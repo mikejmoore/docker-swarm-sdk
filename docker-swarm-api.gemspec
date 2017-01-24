@@ -6,8 +6,8 @@
 require File.expand_path('../lib/docker/swarm/version', __FILE__)
 
 Gem::Specification.new do |gem|
-  gem.authors       = ['Mike Moore / Rogue Wave Software']
-  gem.email         = 'mike.moore@roguewave.com'
+  gem.authors       = ['Mike Moore']
+  gem.email         = 'm.moore.denver@gmail.com'
   gem.description   = 'API for creating container clusters and services using Docker Swarm.  Includes service, node, task management'
   gem.summary       = 'Ruby API for Docker Swarm'
   gem.homepage      = 'https://github.com/mikejmoore/docker-swarm-api'
