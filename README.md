@@ -31,9 +31,21 @@ expect(nodes.length).to eq 1
 worker_connection = Docker::Swarm::Connection.new('http://10.20.30.2:2375')
 swarm.join_worker(worker_connection)
 
+# Worker joins without master api connection
+swarm_options = { "manager_ip" => "10.20.30.1", "node_ip" => "10.20.30.2", "JoinTokens" => {"Worker" => "FooBar" }}
+swarm = Docker::Swarm::Swarm.new(swarm_options)
+local_connection = Docker::Swarm::Connection.new('unix:///var/run/docker.sock')
+swarm.join_worker(local_connection)
+
  # Join another manager to the swarm
 manager_2_connection = Docker::Swarm::Connection.new('http://10.20.30.3:2375')
 swarm.join_manager(manager_2_connection)
+
+# Manager joins without master api connection
+swarm_options = { "manager_ip" => "10.20.30.1", "node_ip" => "10.20.30.2", "JoinTokens" => {"Master" => "FooBar" }}
+swarm = Docker::Swarm::Swarm.new(swarm_options)
+local_connection = Docker::Swarm::Connection.new('unix:///var/run/docker.sock')
+swarm.join_manager(local_connection)
 
  # Gather all nodes of swarm
 nodes = swarm.nodes()

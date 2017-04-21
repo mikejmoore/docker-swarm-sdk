@@ -5,7 +5,7 @@ require 'resolv'
 # This class represents a Docker Swarm Node.
 class Docker::Swarm::Swarm
   include Docker
-  attr_reader :worker_join_token, :manager_join_token, :id, :hash, :node_hash
+  attr_reader :node_ip, :manager_ip, :worker_join_token, :manager_join_token, :id, :hash, :node_hash
 
   def store_manager(manager_connection, listen_address_and_port)
     node = nodes.find {|n| 
@@ -19,29 +19,37 @@ class Docker::Swarm::Swarm
     @hash = hash
   end
  
+  def socket_connection(node_connection)
+    node_connection.url.include?('unix:///')
+  end
 
-  def join(node_connection, join_token = nil, listen_address = "0.0.0.0:2377")
-    join_token = @worker_join_token
-    node_ids_before = nodes().collect {|n| n.id}
+  def join(node_connection, node_ip = nil, manager_ip = nil, join_token = nil, listen_address = "0.0.0.0:2377")
+    node_ids_before = []
     query = {}
-    master_ip = self.connection.url.split("//").last.split(":").first
-    new_node_ip = node_connection.url.split("//").last.split(":").first
+
+    unless socket_connection(node_connection)
+      node_ids_before = nodes().collect {|n| n.id}
+      node_ip = node_connection.url.split("//").last.split(":").first
+      manager_ip = self.connection.url.split("//").last.split(":").first
+    end
     
     join_options = {
             "ListenAddr" => "#{listen_address}",
-            "AdvertiseAddr" => "#{new_node_ip}:2377",
-            "RemoteAddrs" => ["#{master_ip}:2377"],
+            "AdvertiseAddr" => "#{node_ip}:2377",
+            "RemoteAddrs" => ["#{manager_ip}:2377"],
             "JoinToken" => join_token
           }
+
     new_node = nil
     response = node_connection.post('/swarm/join', query, :body => join_options.to_json, expects: [200, 406, 500], full_response: true)
+
     if (response.status == 200)
       nodes.each do |node|
         if (!node_ids_before.include? node.id)
           new_node = node
           @node_hash[node.id] = {hash: node.hash, connection: node_connection}
         end
-      end
+      end unless socket_connection(node_connection)
       return new_node
     elsif (response.status == 406)
       puts "Node is already part of a swarm - maybe this swarm, maybe another swarm."
@@ -52,11 +60,11 @@ class Docker::Swarm::Swarm
   end
 
   def join_worker(node_connection, listen_address = "0.0.0.0:2377")
-    join(node_connection, @worker_join_token)
+    join(node_connection, @node_ip, @manager_ip, @worker_join_token)
   end
   
-  def join_manager(manager_connection, listen_address = "0.0.0.0:2377")
-    join(node_connection, @manager_join_token, listen_address)
+  def join_manager(node_connection, listen_address = "0.0.0.0:2377")
+    join(node_connection, @node_ip, @manager_ip, @manager_join_token, listen_address)
   end
   
   def connection
@@ -347,9 +355,11 @@ class Docker::Swarm::Swarm
    return @@swarms[swarm_id]
  end
  
- def initialize(hash, manager_connection, options = {})
+ def initialize(hash, manager_connection = nil, options = {})
    @hash = hash
    @id = hash['ID']
+   @node_ip = hash['node_ip']
+   @manager_ip = hash['manager_ip']
    @worker_join_token = hash['JoinTokens']['Worker']
    @manager_join_token = hash['JoinTokens']['Manager']
    @node_hash = {}
