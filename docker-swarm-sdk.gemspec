@@ -13,7 +13,7 @@ Gem::Specification.new do |gem|
   gem.homepage      = 'https://github.com/mikejmoore/docker-swarm-api'
   gem.license       = 'MIT'
   gem.files         = `git ls-files lib README.md LICENSE`.split($\)
-  gem.name          = 'docker-swarm-api'
+  gem.name          = 'docker-swarm-sdk'
   gem.version       = Docker::Swarm::VERSION
   gem.add_dependency 'json'
   gem.add_runtime_dependency 'docker-api', '>= 1.33.1'
