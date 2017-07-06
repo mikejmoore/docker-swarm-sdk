@@ -8,8 +8,8 @@ class Docker::Swarm::Swarm
   attr_reader :node_ip, :manager_ip, :worker_join_token, :manager_join_token, :id, :hash, :node_hash
 
   def store_manager(manager_connection, listen_address_and_port)
-    node = nodes.find {|n| 
-      (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) && (n.hash['ManagerStatus']['Addr'] == listen_address_and_port) 
+    node = nodes.find {|n|
+      (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) && (n.hash['ManagerStatus']['Addr'] == listen_address_and_port)
     }
     raise "Node not found for: #{listen_address}" if (!node)
     @node_hash[node.id] = {hash: node.hash, connection: manager_connection}
@@ -18,7 +18,7 @@ class Docker::Swarm::Swarm
   def update_data(hash)
     @hash = hash
   end
- 
+
   def socket_connection(node_connection)
     node_connection.url.include?('unix:///')
   end
@@ -32,7 +32,7 @@ class Docker::Swarm::Swarm
       node_ip = node_connection.url.split("//").last.split(":").first
       manager_ip = self.connection.url.split("//").last.split(":").first
     end
-    
+
     join_options = {
             "ListenAddr" => "#{listen_address}",
             "AdvertiseAddr" => "#{node_ip}:2377",
@@ -62,11 +62,11 @@ class Docker::Swarm::Swarm
   def join_worker(node_connection, listen_address = "0.0.0.0:2377")
     join(node_connection, @node_ip, @manager_ip, @worker_join_token)
   end
-  
+
   def join_manager(node_connection, listen_address = "0.0.0.0:2377")
     join(node_connection, @node_ip, @manager_ip, @manager_join_token, listen_address)
   end
-  
+
   def connection
     @node_hash.keys.each do |node_id|
       node_info = @node_hash[node_id]
@@ -81,7 +81,7 @@ class Docker::Swarm::Swarm
     services().each do |service|
       service.remove()
     end
-    
+
     worker_nodes.each do |node|
       leave(node, true)
     end
@@ -89,7 +89,7 @@ class Docker::Swarm::Swarm
       leave(node, true)
     end
   end
-  
+
   def tasks
     items = []
     query = {}
@@ -109,11 +109,11 @@ class Docker::Swarm::Swarm
       Docker::Swarm::Swarm.leave(force, node_info[:connection])
     end
   end
-  
+
   def remove_node(worker_node)
     Swarm::Node.remove(worker_node.id, self.connection)
   end
-  
+
   def manager_nodes
     return nodes.select { |node| node.role == :manager} || []
   end
@@ -121,7 +121,7 @@ class Docker::Swarm::Swarm
   def worker_nodes
     return nodes.select { |node| node.role == :worker} || []
   end
-  
+
   def networks
     all_networks = []
     response = connection.get("/networks", {}, full_response: true)
@@ -135,7 +135,7 @@ class Docker::Swarm::Swarm
     end
     return all_networks
   end
-  
+
   def create_network(options)
     response = connection.post('/networks/create', {},  body: options.to_json, expects: [200, 201, 500], full_response: true)
     if (response.status <= 201)
@@ -148,11 +148,11 @@ class Docker::Swarm::Swarm
       raise "Error creating network: HTTP-#{response.status} - #{response.body}"
     end
   end
-  
+
   def create_network_overlay(network_name)
     subnet_16_parts = [10, 10, 0, 0]
     max_vxlanid = 200
-    
+
     # Sometimes nodes have leftover networks not on other nodes, that have subnets that can't be duplicated in
     # the new overlay network.
     nodes.each do |node|
@@ -165,7 +165,7 @@ class Docker::Swarm::Swarm
             end
           end
         end
-      
+
         # Make sure our new network doesn't duplicate subnet of other network.
         if (network.hash['IPAM']) && (network.hash['IPAM']['Config'])
           network.hash['IPAM']['Config'].each do |subnet_config|
@@ -189,7 +189,7 @@ class Docker::Swarm::Swarm
         end
       end
     end
-    
+
 
     options = {
         "Name" => network_name,
@@ -218,7 +218,7 @@ class Docker::Swarm::Swarm
       }
       create_network(options)
   end
-  
+
   # Return all of the Nodes.
   def nodes
     opts = {}
@@ -249,7 +249,7 @@ class Docker::Swarm::Swarm
     end
     return nil
   end
-  
+
   def find_service(id)
     query = {}
     opts = {}
@@ -257,14 +257,14 @@ class Docker::Swarm::Swarm
     hash = JSON.parse(response)
     return Docker::Swarm::Service.new(self, hash)
   end
-  
+
   def find_service_by_name(name)
     services.each do |service|
       return service if (service.name == name)
     end
     return nil
   end
-  
+
   def services
     items = []
     query = {}
@@ -276,17 +276,18 @@ class Docker::Swarm::Swarm
     end
     return items
   end
-  
-  
+
+
   # Initialize Swarm
   def self.init(opts, connection)
     query = {}
     resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true, expects: [200, 404, 406, 500])
     if (resp.status == 200)
       swarm = Docker::Swarm::Swarm.swarm(opts, connection)
-      manager_node = swarm.nodes.find {|n|  
-        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) 
+      manager_node = swarm.nodes.find {|n|
+        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true)
       }
+      byebug
       listen_address = manager_node.hash['ManagerStatus']['Addr']
       swarm.store_manager(connection, listen_address)
       return swarm
@@ -296,14 +297,14 @@ class Docker::Swarm::Swarm
   end
 
   # docker swarm join-token -q worker
-  def self.swarm(options, connection)
+  def self.swarm(connection, options = {})
     query = {}
     resp = connection.get('/swarm', query, :body => options.to_json, expects: [200, 404, 406], full_response: true)
     if (resp.status == 406) || (resp.status == 404)
       return nil
     elsif (resp.status == 200)
       hash = JSON.parse(resp.body)
-      swarm = self.find_swarm_for_id(hash['ID'])  
+      swarm = self.find_swarm_for_id(hash['ID'])
       if (swarm)
         swarm.update_data(hash)
       else
@@ -313,7 +314,7 @@ class Docker::Swarm::Swarm
       raise "Bad response: #{resp.status} #{resp.body}"
     end
   end
-  
+
   def self.leave(force, connection)
     query = {}
     query['force'] = force
@@ -322,39 +323,39 @@ class Docker::Swarm::Swarm
       raise "Error leaving: #{response.body}  HTTP-#{response.status}"
     end
   end
-  
+
   def self.find(connection, options = {})
     query = {}
     response = connection.get('/swarm', query, expects: [200, 404, 406], full_response: true)
     if (response.status == 200)
       hash = JSON.parse(response.body)
-      swarm = self.find_swarm_for_id(hash['ID'])  
+      swarm = self.find_swarm_for_id(hash['ID'])
       if (swarm)
         swarm.update_data(hash)
       else
         swarm = Docker::Swarm::Swarm.new(hash, connection, options)
       end
-      manager_node = swarm.nodes.find {|n|  
-        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true) 
+      manager_node = swarm.nodes.find {|n|
+        (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true)
       }
       listen_address = manager_node.hash['ManagerStatus']['Addr']
       swarm.store_manager(connection, listen_address)
       return swarm
     elsif (response.status > 200)
       return nil
-    else 
+    else
       raise "Error finding swarm: HTTP-#{response.status} #{response.body}"
     end
   end
-  
-  
+
+
  private
  @@swarms = {}
- 
+
  def self.find_swarm_for_id(swarm_id)
    return @@swarms[swarm_id]
  end
- 
+
  def initialize(hash, manager_connection = nil, options = {})
    @hash = hash
    @id = hash['ID']
@@ -366,8 +367,8 @@ class Docker::Swarm::Swarm
    @manager_connection = manager_connection
    @@swarms[@id] = self
  end
- 
- 
-  
+
+
+
 
 end

@@ -1,14 +1,14 @@
 require 'docker-api'
+require 'active_support'
 
 class Docker::Swarm::Service
-  #include Docker::Base
   attr_reader :hash
 
   def initialize(swarm, hash)
     @swarm = swarm
     @hash = hash
   end
-  
+
   def name()
     @hash['Spec']['Name']
   end
@@ -16,13 +16,13 @@ class Docker::Swarm::Service
   def id()
     return @hash['ID']
   end
-  
+
   def reload()
     s = @swarm.find_service(id())
     @hash = s.hash
     return self
   end
-  
+
   def network_ids
     network_ids = []
     if (@hash['Endpoint']['VirtualIPs'])
@@ -32,21 +32,32 @@ class Docker::Swarm::Service
     end
     return network_ids
   end
-  
+
   def remove(opts = {})
     query = {}
     @swarm.connection.delete("/services/#{self.id}", query, :body => opts.to_json)
   end
-  
-  def update(opts)
+
+  def update(options = {})
+    specs = @hash['Spec'].deep_merge(options)
     query = {}
     version = @hash['Version']['Index']
-    response = @swarm.connection.post("/services/#{self.id}/update?version=#{version}", query, :body => opts.to_json)
+    response = @swarm.connection.post("/services/#{self.id}/update?version=#{version}", query, :body => specs.to_json)
+  end
+
+  def restart
+    options = {}
+    options['TaskTemplate'] = {'ForceUpdate' => 1}
+    update(options)
   end
 
   def scale(count)
     @hash['Spec']['Mode']['Replicated']['Replicas'] = count
     self.update(@hash['Spec'])
+  end
+
+  def replicas
+    @hash['Spec']['Mode']['Replicated']['Replicas']
   end
 
   def self.DEFAULT_OPTIONS
@@ -73,7 +84,7 @@ class Docker::Swarm::Service
             },
             "Reservations" => {
 #              "NanoCPUs" => ?
-#              MemoryBytes => 
+#              MemoryBytes =>
            }
           },
           "RestartPolicy" => {
@@ -107,6 +118,4 @@ class Docker::Swarm::Service
       }
     return default_service_create_options
   end
-  
-  
 end

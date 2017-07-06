@@ -18,6 +18,7 @@ Gem::Specification.new do |gem|
   gem.add_dependency 'json'
   gem.add_runtime_dependency 'docker-api', '>= 1.33.1'
   gem.add_runtime_dependency 'retry_block', '>= 1.2.0'
+  gem.add_runtime_dependency 'activesupport', '>= 5.0'
   gem.add_development_dependency 'byebug', '~> 6.0'
   gem.add_development_dependency 'rake', '~> 12.0'
   gem.add_development_dependency 'rspec', '~> 3.0'

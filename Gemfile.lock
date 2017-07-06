@@ -1,7 +1,8 @@
 PATH
   remote: .
   specs:
-    docker-swarm-api (1.2.4)
+    docker-swarm-sdk (1.2.4)
+      activesupport (>= 5.0)
       docker-api (>= 1.33.1)
       json
       retry_block (>= 1.2.0)
@@ -9,15 +10,23 @@ PATH
 GEM
   remote: http://rubygems.org/
   specs:
+    activesupport (5.1.1)
+      concurrent-ruby (~> 1.0, >= 1.0.2)
+      i18n (~> 0.7)
+      minitest (~> 5.1)
+      tzinfo (~> 1.1)
     byebug (6.0.2)
     coderay (1.1.1)
+    concurrent-ruby (1.0.5)
     diff-lcs (1.2.5)
-    docker-api (1.33.1)
+    docker-api (1.33.6)
       excon (>= 0.38.0)
       json
-    excon (0.54.0)
-    json (2.0.2)
+    excon (0.57.1)
+    i18n (0.8.4)
+    json (2.1.0)
     method_source (0.8.2)
+    minitest (5.10.2)
     parallel (1.10.0)
     pry (0.10.4)
       coderay (~> 1.1.0)
@@ -43,13 +52,16 @@ GEM
     rspec-support (3.5.0)
     single_cov (0.5.8)
     slop (3.6.0)
+    thread_safe (0.3.6)
+    tzinfo (1.2.3)
+      thread_safe (~> 0.1)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
   byebug (~> 6.0)
-  docker-swarm-api!
+  docker-swarm-sdk!
   parallel (~> 1.10)
   pry (~> 0.10.4)
   rake (~> 12.0)
@@ -58,4 +70,4 @@ DEPENDENCIES
   single_cov (~> 0.5.8)
 
 BUNDLED WITH
-   1.10.6
+   1.14.6

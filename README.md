@@ -19,6 +19,9 @@ Sample Usage
  # Make a connection to the Swarm manager's API.  (Assumes port 2375 exposed for API)
 master_connection = Docker::Swarm::Connection.new('http://10.20.30.1:2375')
 
+# If swarm on the swarm master and using socket:
+master_connection = Docker::Swarm::Connection.new('unix:///var/run/docker.sock')
+
  # Manager node intializes swarm
 swarm_init_options = { "ListenAddr" => "0.0.0.0:2377" }
 swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
@@ -90,7 +93,7 @@ tasks = swarm.tasks()
 
  # Scale up or down the number of replicas on a service
 service.scale(20)
-      
+
  # Worker leaves the swarm - no forcing
 swarm.leave(worker_node, node)
 

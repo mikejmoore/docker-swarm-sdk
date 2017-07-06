@@ -19,9 +19,11 @@ ENV['DOCKER_API_USER']  ||= 'debbie_docker'
 ENV['DOCKER_API_PASS']  ||= '*************'
 ENV['DOCKER_API_EMAIL'] ||= 'debbie_docker@example.com'
 
-ENV['SWARM_MASTER_ADDRESS'] ||= "http://#{Resolv.getaddress("core-01")}:2375"
+master_ip = `cd ./spec/vagrant_for_specs && vagrant ssh core-01 -c "ip address show eth1  | grep 'inet ' | sed -e 's/^.*inet //' -e 's/\/.*$//'"`
+ENV['SWARM_MASTER_ADDRESS'] ||= "http://#{master_ip}:2375"
 ENV['SWARM_MASTER_LISTEN_ADDRESS'] ||= "0.0.0.0"
-ENV['SWARM_WORKER_ADDRESS'] ||= "http://#{Resolv.getaddress("core-02")}:2375"
+worker_ip = `cd ./spec/vagrant_for_specs && vagrant ssh core-02 -c "ip address show eth1  | grep 'inet ' | sed -e 's/^.*inet //' -e 's/\/.*$//'"`
+ENV['SWARM_WORKER_ADDRESS'] ||= "http://#{worker_ip}:2375"
 
 
 RSpec.shared_context "local paths" do
@@ -63,11 +65,9 @@ RSpec.configure do |config|
 end
 
 def init_test_swarm(master_connection, master_listen_address = "0.0.0.0")
-  master_ip = master_connection.url.split("//").last.split(":").first
+  byebug
   master_swarm_port = 2377
   swarm_init_options = {
-      "ListenAddr" => "#{ENV['SWARM_MASTER_LISTEN_ADDRESS']}:#{master_swarm_port}",
-      "AdvertiseAddr" => "#{master_ip}:#{master_swarm_port}",
       "ForceNewCluster" => false,
       "Spec" => {
         "Orchestration" => {},
@@ -76,8 +76,15 @@ def init_test_swarm(master_connection, master_listen_address = "0.0.0.0")
         "CAConfig" => {}
       }
     }
+  if (!master_connection.url.start_with? "unix")
+    master_ip = master_connection.url.split("//").last.split(":").first
+    swarm_init_options["ListenAddr"] = "#{ENV['SWARM_MASTER_LISTEN_ADDRESS']}:#{master_swarm_port}"
+    swarm_init_options["AdvertiseAddr"] = "#{master_ip}:#{master_swarm_port}"
+  else
+    swarm_init_options["ListenAddr"] = "127.0.0.1:#{master_swarm_port}"
+    swarm_init_options["AdvertiseAddr"] = "127.0.0.1:#{master_swarm_port}"
+  end
 
   puts "Manager node intializing swarm"
   swarm = Docker::Swarm::Swarm.init(swarm_init_options, master_connection)
 end
-
