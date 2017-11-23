@@ -283,11 +283,10 @@ class Docker::Swarm::Swarm
     query = {}
     resp = connection.post('/swarm/init', query, :body => opts.to_json, full_response: true, expects: [200, 404, 406, 500])
     if (resp.status == 200)
-      swarm = Docker::Swarm::Swarm.swarm(opts, connection)
+      swarm = Docker::Swarm::Swarm.swarm(connection, opts)
       manager_node = swarm.nodes.find {|n|
         (n.hash['ManagerStatus']) && (n.hash['ManagerStatus']['Leader'] == true)
       }
-      byebug
       listen_address = manager_node.hash['ManagerStatus']['Addr']
       swarm.store_manager(connection, listen_address)
       return swarm
