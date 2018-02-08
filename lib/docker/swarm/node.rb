@@ -10,21 +10,21 @@ class Docker::Swarm::Node
     @hash = hash
     @swarm = swarm
   end
-  
+
   def refresh
     query = {}
     response = @swarm.connection.get("/nodes/#{id}", query, expects: [200])
     @hash = JSON.parse(response)
   end
-  
-  def id 
+
+  def id
     return @hash['ID']
   end
-  
+
   def host_name
     return @hash['Description']['Hostname']
   end
-  
+
   def connection
     if (@swarm) && (@swarm.node_hash[id()])
       return @swarm.node_hash[id()][:connection]
@@ -32,7 +32,7 @@ class Docker::Swarm::Node
       return nil
     end
   end
-  
+
   def role
     if (@hash['Spec']['Role'] == "worker")
       return :worker
@@ -42,15 +42,15 @@ class Docker::Swarm::Node
       raise "Couldn't determine machine role from spec: #{@hash['Spec']}"
     end
   end
-  
+
   def availability
     return @hash['Spec']['Availability'].to_sym
   end
-  
+
   def status
     return @hash['Status']['State']
   end
-  
+
   def drain(opts = {})
     change_availability(:drain)
     if (opts[:wait_for_drain])
@@ -60,7 +60,7 @@ class Docker::Swarm::Node
       end
     end
   end
-  
+
   def swarm_connection
     node_hash = @swarm.node_hash[self.id]
     if (node_hash)
@@ -69,13 +69,13 @@ class Docker::Swarm::Node
     return nil
   end
 
-  
+
   def running_tasks
     return tasks.select {|t| t.status == 'running'}
   end
-  
+
   def tasks
-    return @swarm.tasks.select {|t| 
+    return @swarm.tasks.select {|t|
       (t.node != nil) && (t.node.id == self.id)
     }
   end
@@ -83,7 +83,7 @@ class Docker::Swarm::Node
   def activate
     change_availability(:active)
   end
-  
+
   def remove
     leave(true)
     refresh
@@ -94,13 +94,13 @@ class Docker::Swarm::Node
     end
     Docker::Swarm::Node.remove(self.id, @swarm.connection)
   end
-  
-  
+
+
   def remove_network_with_name(network_name)
     network = find_network_by_name(network_name)
     self.remove_network(network) if (network)
   end
-  
+
   def remove_network(network)
     attempts = 0
     if (self.connection == nil)
@@ -111,7 +111,7 @@ class Docker::Swarm::Node
         if (response.status == 500)
           puts "Warning:  Deleting network (#{network.name}) from #{self.host_name} returned HTTP-#{response.status}  #{response.body}"
         end
-  
+
         sleep 1
         attempts += 1
         if (attempts > 30)
@@ -120,14 +120,14 @@ class Docker::Swarm::Node
       end
     end
   end
-  
-  
+
+
   def leave(force = true)
     drain(wait_for_drain: true, wait_seconds: 60)
     # change_availability(:active)
     @swarm.leave(self, force)
   end
-  
+
   def change_availability(new_availability)
     raise "Bad availability param: #{availability}" if (!AVAILABILITY[availability])
     refresh
@@ -140,16 +140,15 @@ class Docker::Swarm::Node
       end
     end
   end
-  
+
   def networks()
     if (connection)
       return Docker::Swarm::Node.networks_on_host(connection, @swarm)
     else
-      debugger
       raise "No connection set for node: #{self.host_name}, ID: #{self.id}"
     end
   end
-  
+
   def find_network_by_name(network_name)
     networks.each do |network|
       if (network.name == network_name)
@@ -167,8 +166,8 @@ class Docker::Swarm::Node
     end
     return nil
   end
-  
-  
+
+
   def self.remove(node_id, connection)
     query = {}
     response = connection.delete("/nodes/#{node_id}", query, expects: [200, 406, 500], full_response: true)
@@ -176,7 +175,7 @@ class Docker::Swarm::Node
       raise "Error deleting node: HTTP-#{response.status} #{response.body}"
     end
   end
-  
+
   def self.networks_on_host(connection, swarm)
     networks = []
     response = connection.get("/networks", {}, full_response: true, expects: [200])
@@ -186,6 +185,6 @@ class Docker::Swarm::Node
     end
     return networks
   end
-  
-  
+
+
 end
